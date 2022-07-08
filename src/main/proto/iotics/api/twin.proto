@@ -1,0 +1,315 @@
+// Copyright (c) 2019-2022 Iotic Labs Ltd. All rights reserved.
+
+// Iotics Web protocol definitions (twins)
+syntax = "proto3";
+
+import "iotics/api/common.proto";
+import "iotics/api/feed.proto";
+import "iotics/api/input.proto";
+
+package iotics.api;
+
+option csharp_namespace = "Iotics.Api";
+option go_package = "github.com/Iotic-Labs/iotic-go-proto-qapi/iotics/api;ioticsapi";
+option java_multiple_files = true;
+option java_outer_classname = "TwinProto";
+option java_package = "com.iotics.api";
+option objc_class_prefix = "IAX";
+option php_namespace = "Iotics\\Api";
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+
+// TwinAPI enables creation and management of Iotics twins.
+// Services only affect local resources, unless stated otherwise.
+service TwinAPI {
+
+  // CreateTwin creates a twin.
+  rpc CreateTwin(CreateTwinRequest) returns (CreateTwinResponse) {}
+
+  // UpsertTwin creates or update a twin with its metadata + the twin feeds with their metadata.
+  // The full state is applied (ie. if the operation succeeds the state of the twin/feeds will be the one
+  // described in the payload)
+  rpc UpsertTwin(UpsertTwinRequest) returns (UpsertTwinResponse) {}
+
+  // DeleteTwin deletes a twin.
+  rpc DeleteTwin(DeleteTwinRequest) returns (DeleteTwinResponse) {}
+
+  // UpdateTwin updates a twin (partial update).
+  rpc UpdateTwin(UpdateTwinRequest) returns (UpdateTwinResponse) {}
+
+  // Describes a twin. (local and remote)
+  rpc DescribeTwin(DescribeTwinRequest) returns (DescribeTwinResponse) {}
+
+  // List all twins.
+  rpc ListAllTwins(ListAllTwinsRequest) returns (ListAllTwinsResponse) {}
+}
+
+// Twin is the virtual representation of a (physical, purely virtual or hybrid) device,
+// is only ever located in the host it was created.
+message Twin {
+
+  // Unique ID of the twin, assigned by the user.
+  TwinID id = 1;
+
+  // Visibility of this twin
+  Visibility visibility = 2;
+}
+
+// List all twins.
+message ListAllTwinsRequest {
+  Headers headers = 1;
+  // Listing result range
+  Range range = 20;
+}
+
+// Response of the list all twins request.
+// Note this is useful for sync responses. In case there are too many twins (millions)
+// this request may fail. Better opt for async behaviour via stomp/websocket.
+message ListAllTwinsResponse {
+  Headers headers = 1;
+
+  // ListAllTwinsResponse twin details.
+  message TwinDetails {
+    // Twin identifier.
+    TwinID id = 1;
+    // Twin visibility. Enum that defines a twins level of visibility.
+    Visibility visibility = 2;
+    // Twin location (if set).
+    GeoLocation location = 3;
+    // Twin custom properties.
+    repeated Property properties = 5;
+  }
+
+  // Payload of listed twins.
+  message Payload {
+    repeated TwinDetails twins = 1;
+  }
+  Payload payload = 2;
+}
+
+// CreateTwinRequest is made to create a twin (idempotent).
+message CreateTwinRequest {
+  // Arguments identifies the twin to create.
+  message Payload {
+    // Unique ID of the twin to create
+    TwinID twinId = 1;
+  }
+
+  // Common headers
+  Headers headers = 1;
+
+  // Request-specific payload
+  Payload payload = 2;
+}
+
+// CreateTwinResponse is received when a twin has been created.
+message CreateTwinResponse {
+
+  // Payload identifies the twin which was created.
+  message Payload {
+    // Unique ID of the twin to delete
+    TwinID twinId = 1;
+  }
+
+  // Common headers
+  Headers headers = 1;
+
+  // Request-specific payload
+  Payload payload = 2;
+}
+
+// ---------------------------------------
+
+// DeleteRequest is made to delete a particular twin.
+message DeleteTwinRequest {
+
+  // Arguments identifies the twin to delete.
+  message Arguments {
+    // Unique ID of the twin to delete
+    TwinID twinId = 1;
+  }
+
+  // Common headers
+  Headers headers = 1;
+
+  // Request-specific arguments
+  Arguments args = 2;
+}
+
+// Deleted is received when a twin has been deleted.
+message DeleteTwinResponse {
+
+  // Payload identifies the twin which was deleted.
+  message Payload {
+    // Unique ID of the twin to delete
+    TwinID twinId = 1;
+  }
+
+  // Common headers
+  Headers headers = 1;
+
+  // Request-specific response
+  Payload payload = 2;
+}
+
+// Description of twin: Provides public metadata lookup for individual resources.
+message DescribeTwinRequest {
+  // Only one action argument is necessary.
+  message Arguments {
+    // unique id of the twin to describe
+    TwinID twinId = 1;
+
+    // optional HostID to describe a remote twin
+    HostID remoteHostId = 2;
+  }
+
+  Headers headers = 1;
+
+  Arguments args = 3;
+}
+
+// Metadata message for this Feed.
+message FeedMeta {
+  FeedID feedId = 1;
+  bool storeLast = 3;
+}
+
+// Metadata message for this input.
+message InputMeta {
+  InputID inputId = 1;
+}
+
+// The response for a description request on this twin.
+message DescribeTwinResponse {
+  Headers headers = 1;
+
+  // Metadata result data bag for this feed.
+  message MetaResult {
+    GeoLocation location = 1;
+    repeated FeedMeta feeds = 4;
+    repeated InputMeta inputs = 5;
+    // Custom properties associated with this twin.
+    repeated Property properties = 6;
+  }
+
+  // Payload of described twins.
+  message Payload {
+    // the twin
+    Twin twin = 1;
+
+    // the description details
+    MetaResult result = 2;
+
+    // optional - if present indicates this response comes from a remote host
+    HostID remoteHostId = 3;
+  }
+  Payload payload = 2;
+}
+
+
+// ---------------------------------------
+
+// VisibilityUpdate describes the update of a twin visibility.
+message VisibilityUpdate {
+  // New visibility for this twin
+  Visibility visibility = 1;
+}
+
+// GeoLocationUpdate describes the update of a twin location.
+message GeoLocationUpdate {
+  // New location of the twin. If unset, the previously set location will be removed
+  GeoLocation location = 1;
+}
+
+// UpdateTwinRequest is used to update attributes (including metadata) of a given twin.
+message UpdateTwinRequest {
+  // UpdateTwinRequest mandatory arguments.
+  message Arguments {
+    // Unique ID of the twin to update
+    TwinID twinId = 1;
+  }
+  // UpdateTwinRequest payload. One or more fields can be provided, depending on what needs to be updated.
+  // Note that the specified metadata changes are applied in the following order:
+  // tags, visibility, properties, labels, comments, location
+  message Payload {
+    // New visibility
+    VisibilityUpdate newVisibility = 2;
+
+    // Custom properties to add/remove. Internal properties (such as location) cannot be modified here.
+    PropertyUpdate properties = 3;
+
+    // Location to be set/unset
+    GeoLocationUpdate location = 6;
+
+  }
+  // UpdateTwinRequest headers
+  Headers headers = 1;
+
+  // UpdateTwinRequest arguments
+  Arguments args = 2;
+  // UpdateTwinRequest payload
+  Payload payload = 3;
+}
+
+
+// UpdateTwinResponse describes an updated twin. It is received when the update operation is successful.
+message UpdateTwinResponse {
+  // UpdateTwinResponse payload.
+  message Payload {
+    // Unique ID of the twin to delete
+    TwinID twinId = 1;
+  }
+  // UpdateTwinResponse headers
+  Headers headers = 1;
+  //UpdateTwinResponse payload
+  Payload payload = 2;
+}
+
+// UpsertTwinRequest describes the full state of a twin + its feeds to create or update (full update)
+message UpsertTwinRequest {
+
+  // UpsertTwinRequest payload. This state will be applied to the twin/feeds
+  message Payload {
+
+    // Unique ID of the twin to create/update
+    string twinId = 1;
+
+    // Twin visibility. Default value: 'PRIVATE'
+    Visibility visibility = 2;
+
+    // Twin Properties to set
+    repeated Property properties = 5;
+
+    // Twin location to set. If not set the Twin will have no location
+    GeoLocation location = 6;
+
+    // Feeds with metadata to set for the twin
+    repeated UpsertFeedWithMeta feeds = 7;
+
+    // Inputs with metadata to set for the twin
+    repeated UpsertInputWithMeta inputs = 8;
+
+  }
+  // UpdateTwinRequest headers
+  Headers headers = 1;
+
+  // UpdateTwinRequest payload
+  Payload payload = 2;
+}
+
+// UpsertTwinResponse is received when a twin and its feeds have been created/updated.
+message UpsertTwinResponse {
+
+  // Payload identifies the twin which was created.
+  message Payload {
+    // created/updated twin
+    string twinId = 1;
+  }
+
+  // Common headers
+  Headers headers = 1;
+
+  // Request-specific payload
+  Payload payload = 2;
+}
