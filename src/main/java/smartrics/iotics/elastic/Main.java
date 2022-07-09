@@ -1,7 +1,9 @@
 package smartrics.iotics.elastic;
 
+import okhttp3.OkHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import smartrics.iotics.space.SpaceData;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,7 +19,8 @@ public class Main {
             configFile = args[0];
         }
         Configuration configuration = Configuration.NewConfiguration(configFile);
-
         logger.info("Config loaded!");
+        SpaceData spaceData = new SpaceData(configuration.space(), new SpaceData.Loader(new OkHttpClient()));
+        logger.info("Loaded space data: " + spaceData);
     }
 }

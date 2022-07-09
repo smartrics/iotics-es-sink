@@ -72,7 +72,6 @@ public final class SpaceData {
         loader.load(name, this);
     }
 
-
     public String name() {
         return name;
     }
@@ -101,5 +100,12 @@ public final class SpaceData {
         return version;
     }
 
-
+    @Override
+    public String toString() {
+        return "SpaceData{" +
+                "fqn='" + fqn + '\'' +
+                ", resolverUrl=" + resolverUrl +
+                ", version='" + version + '\'' +
+                '}';
+    }
 }

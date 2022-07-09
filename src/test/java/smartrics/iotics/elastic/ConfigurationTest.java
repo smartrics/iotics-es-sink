@@ -15,7 +15,7 @@ class ConfigurationTest {
         Configuration conf = Configuration.NewConfiguration(
                 new ByteArrayInputStream("spaceDns: foobar.com".getBytes())
         );
-        assertEquals(conf.spaceDns(), "foobar.com");
+        assertEquals(conf.space(), "foobar.com");
     }
 
     @Test

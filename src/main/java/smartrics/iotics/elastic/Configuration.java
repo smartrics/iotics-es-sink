@@ -1,7 +1,5 @@
 package smartrics.iotics.elastic;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
@@ -11,7 +9,7 @@ import java.nio.file.Paths;
 
 public class Configuration {
 
-    private String spaceDns;
+    private String space;
 
     public static Configuration NewConfiguration(String fileName) {
         if (fileName == null) {
@@ -33,11 +31,11 @@ public class Configuration {
         return config;
     }
 
-    public String spaceDns() {
-        return spaceDns;
+    public String space() {
+        return space;
     }
 
-    public void setSpaceDns(String spaceDns) {
-        this.spaceDns = spaceDns;
+    public void setSpace(String space) {
+        this.space = space;
     }
 }
