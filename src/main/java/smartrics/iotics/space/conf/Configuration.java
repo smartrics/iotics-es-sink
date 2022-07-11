@@ -1,4 +1,4 @@
-package smartrics.iotics.elastic;
+package smartrics.iotics.space.conf;
 
 import org.yaml.snakeyaml.Yaml;
 
@@ -9,6 +9,7 @@ import java.nio.file.Paths;
 
 public class Configuration {
 
+    private Identities identities;
     private String space;
 
     public static Configuration NewConfiguration(String fileName) {
@@ -37,5 +38,13 @@ public class Configuration {
 
     public void setSpace(String space) {
         this.space = space;
+    }
+
+    public Identities identities() {
+        return this.identities;
+    }
+
+    public void setIdentities(Identities id) {
+        this.identities = id;
     }
 }
