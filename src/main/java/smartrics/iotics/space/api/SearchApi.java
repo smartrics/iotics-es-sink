@@ -4,6 +4,8 @@ import com.google.common.base.Strings;
 import com.google.protobuf.StringValue;
 import com.iotics.api.*;
 import io.grpc.stub.StreamObserver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import rx.Observable;
 import rx.subjects.PublishSubject;
 import smartrics.iotics.space.Twin;
@@ -13,6 +15,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class SearchApi {
+
+    private static final Logger logger = LoggerFactory.getLogger(SearchApi.class);
 
     private final GrpcHost host;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(32);
@@ -32,6 +36,9 @@ public class SearchApi {
                 String sHId = null;
                 if(!Strings.isNullOrEmpty(hId.getValue())) {
                     sHId = hId.getValue();
+                }
+                if(value.getPayload().getTwinsCount()>0) {
+                    logger.info("received " + value.getPayload().getTwinsCount() + " twins from hostID=" + hId.getValue());
                 }
                 for (SearchResponse.TwinDetails t : value.getPayload().getTwinsList()) {
                     subject.onNext(new Twin(sHId, t));

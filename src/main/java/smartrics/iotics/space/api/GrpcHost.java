@@ -12,8 +12,6 @@ import java.time.Duration;
 
 public class GrpcHost {
 
-    private static final Logger logger = LoggerFactory.getLogger(GrpcHost.class);
-
     final ManagedChannel channel;
     private final IdManager idManager;
 

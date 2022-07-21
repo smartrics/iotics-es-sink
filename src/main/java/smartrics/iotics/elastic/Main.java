@@ -1,6 +1,8 @@
 package smartrics.iotics.elastic;
 
 import com.google.protobuf.StringValue;
+import com.iotics.api.GeoCircle;
+import com.iotics.api.GeoLocation;
 import com.iotics.api.Scope;
 import com.iotics.api.SearchRequest;
 import com.iotics.sdk.identity.SimpleIdentity;
@@ -56,9 +58,22 @@ public class Main {
         GrpcHost host = new GrpcHost(spaceData, idManager);
 
         SearchApi searchApi = new SearchApi(host);
-        SearchFilter f = SearchFilter.Builder.aSearchFilter().withScope(Scope.GLOBAL).withText("evdemotwins").build();
+        GeoCircle LONDON = GeoCircle.newBuilder()
+                .setRadiusKm(25)
+                .setLocation(GeoLocation.newBuilder()
+                        .setLat(51.509865)
+                        .setLon(-0.118092)
+                        .build())
+                .build();
+
+        SearchFilter f = SearchFilter.Builder.aSearchFilter()
+                .withScope(Scope.GLOBAL)
+                .withLocation(LONDON)
+                .build();
+
+
         Observable<Twin> obs = searchApi.search(SearchApi.aSearchRequest(host.newHeaders(), f));
-        obs.subscribe(twin -> System.out.println(twin));
-        obs.count().subscribe(c -> System.out.println("count=" + c));
+        obs.count().subscribe(c -> logger.info("Count=" + c));
+        obs.subscribe();
     }
 }
