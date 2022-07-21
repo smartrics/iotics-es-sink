@@ -1,5 +1,8 @@
 package smartrics.iotics.elastic;
 
+import com.google.protobuf.StringValue;
+import com.iotics.api.Scope;
+import com.iotics.api.SearchRequest;
 import com.iotics.sdk.identity.SimpleIdentity;
 import com.iotics.sdk.identity.experimental.ResolverClient;
 import com.iotics.sdk.identity.jna.JnaSdkApiInitialiser;
@@ -7,7 +10,13 @@ import com.iotics.sdk.identity.jna.SdkApi;
 import okhttp3.OkHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import smartrics.iotics.space.IdManager;
+import rx.Observable;
+import rx.functions.Action1;
+import smartrics.iotics.space.Twin;
+import smartrics.iotics.space.api.GrpcHost;
+import smartrics.iotics.space.api.SearchApi;
+import smartrics.iotics.space.api.SearchFilter;
+import smartrics.iotics.space.api.identity.IdManager;
 import smartrics.iotics.space.SpaceData;
 import smartrics.iotics.space.conf.Configuration;
 
@@ -16,7 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class Main {
-    private static final Logger logger = LoggerFactory.getLogger(Configuration.class);
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws IOException {
         String configFile = "./config.yaml";
@@ -43,5 +52,13 @@ public class Main {
                 simpleIdentity);
         logger.info("user: " + idManager.userIdentity());
         logger.info("agent: " + idManager.agentIdentity());
+
+        GrpcHost host = new GrpcHost(spaceData, idManager);
+
+        SearchApi searchApi = new SearchApi(host);
+        SearchFilter f = SearchFilter.Builder.aSearchFilter().withScope(Scope.GLOBAL).withText("evdemotwins").build();
+        Observable<Twin> obs = searchApi.search(SearchApi.aSearchRequest(host.newHeaders(), f));
+        obs.subscribe(twin -> System.out.println(twin));
+        obs.count().subscribe(c -> System.out.println("count=" + c));
     }
 }

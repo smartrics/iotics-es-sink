@@ -1,4 +1,4 @@
-package smartrics.iotics.space;
+package smartrics.iotics.space.api.identity;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -10,6 +10,7 @@ import com.iotics.sdk.identity.experimental.ResolverClient;
 import smartrics.iotics.space.conf.IdentityData;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Iterator;
 
 public class IdManager {
@@ -46,6 +47,10 @@ public class IdManager {
 
     public Identity userIdentity() {
         return userIdentity;
+    }
+
+    public String CreateAuthToken(Duration duration) {
+        return this.simpleIdentity.CreateAgentAuthToken(this.agentIdentity(), this.userIdentity().did(), duration);
     }
 
     private void setup() throws IOException {
