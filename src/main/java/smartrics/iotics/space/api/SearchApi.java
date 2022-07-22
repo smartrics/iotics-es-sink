@@ -3,11 +3,9 @@ package smartrics.iotics.space.api;
 import com.google.common.base.Strings;
 import com.google.protobuf.StringValue;
 import com.iotics.api.*;
-import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable;
-import rx.subjects.PublishSubject;
 import smartrics.iotics.space.Twin;
 
 import java.util.concurrent.Executors;
@@ -27,9 +25,7 @@ public class SearchApi {
 
     public Observable<Twin> search(SearchRequest request) {
         SearchAPIGrpc.SearchAPIStub searchApi = SearchAPIGrpc.newStub(host.channel);
-
-        PublishSubject<Twin> subject = PublishSubject.create();
-        searchApi.synchronousSearch(request, new StreamObserver<>() {
+        StreamObserverMapper<SearchResponse, Twin> mapper = new StreamObserverMapper<>() {
             @Override
             public void onNext(SearchResponse value) {
                 HostID hId = value.getPayload().getRemoteHostId();
@@ -41,22 +37,13 @@ public class SearchApi {
                     logger.info("received " + value.getPayload().getTwinsCount() + " twins from hostID=" + hId.getValue());
                 }
                 for (SearchResponse.TwinDetails t : value.getPayload().getTwinsList()) {
-                    subject.onNext(new Twin(sHId, t));
+                    observableDelegate.onNext(new Twin(sHId, t));
                 }
             }
-
-            @Override
-            public void onError(Throwable t) {
-                subject.onError(t);
-            }
-
-            @Override
-            public void onCompleted() {
-                subject.onCompleted();
-            }
-        });
-        scheduler.schedule(() -> subject.onCompleted(), request.getPayload().getExpiryTimeout().getSeconds(), TimeUnit.SECONDS);
-        return subject;
+        };
+        searchApi.synchronousSearch(request, mapper);
+        scheduler.schedule(() -> mapper.observableDelegate.onCompleted(), request.getPayload().getExpiryTimeout().getSeconds(), TimeUnit.SECONDS);
+        return mapper.observableDelegate;
     }
 
     public static SearchRequest aSearchRequest(Headers headers, SearchFilter filter) {

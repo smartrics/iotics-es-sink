@@ -1,6 +1,9 @@
 package smartrics.iotics.space;
 
+import com.iotics.api.FeedMeta;
 import com.iotics.api.SearchResponse;
+
+import java.util.ArrayList;
 
 public class Feed extends Point {
 
@@ -13,6 +16,13 @@ public class Feed extends Point {
         this.parent = parent;
         this.storeLast = feedDetails.getStoreLast();
         this.id = feedDetails.getFeed().getId().getValue();
+    }
+
+    public Feed(Twin parent, FeedMeta feed) {
+        super(parent.remoteHostId().orElse(null), new ArrayList<>());
+        this.parent = parent;
+        this.storeLast = feed.getStoreLast();
+        this.id = feed.getFeedId().getValue();
     }
 
     public Twin parent() {

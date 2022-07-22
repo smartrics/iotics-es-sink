@@ -19,6 +19,16 @@ public class Twin {
     private List<Input> inputs= new ArrayList<>();
     private String remoteHostId;
 
+    public Twin(String remoteHostId, com.iotics.api.Twin t, DescribeTwinResponse.MetaResult metaResult) {
+        this.properties.addAll(metaResult.getPropertiesList());
+        metaResult.getFeedsList().stream().map(feed -> new Feed(Twin.this, feed));
+        metaResult.getInputsList().stream().map(input -> new Input(Twin.this, input));
+        this.id = t.getId();
+        this.visibility = t.getVisibility();
+        this.location = metaResult.getLocation();
+        this.remoteHostId = remoteHostId;
+    }
+
     public Twin(String remoteHostId, SearchResponse.TwinDetails t) {
         this.properties.addAll(t.getPropertiesList());
         t.getFeedsList().stream().map(feedDetails -> new Feed(Twin.this, feedDetails));

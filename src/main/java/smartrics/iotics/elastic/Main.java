@@ -1,19 +1,17 @@
 package smartrics.iotics.elastic;
 
-import com.google.protobuf.StringValue;
 import com.iotics.api.GeoCircle;
 import com.iotics.api.GeoLocation;
 import com.iotics.api.Scope;
-import com.iotics.api.SearchRequest;
 import com.iotics.sdk.identity.SimpleIdentity;
 import com.iotics.sdk.identity.experimental.ResolverClient;
 import com.iotics.sdk.identity.jna.JnaSdkApiInitialiser;
 import com.iotics.sdk.identity.jna.SdkApi;
 import okhttp3.OkHttpClient;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable;
-import rx.functions.Action1;
 import smartrics.iotics.space.Twin;
 import smartrics.iotics.space.api.GrpcHost;
 import smartrics.iotics.space.api.SearchApi;
@@ -30,30 +28,13 @@ public class Main {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws IOException {
-        String configFile = "./config.yaml";
-        if (args.length == 1) {
-            configFile = args[0];
-        }
-        Configuration configuration = Configuration.NewConfiguration(configFile);
-        logger.info("Config loaded!");
+        Configuration configuration = newConfiguration(args);
         SpaceData spaceData = new SpaceData(configuration.space(), new SpaceData.Loader(new OkHttpClient()));
         logger.info("Loaded space data: " + spaceData);
 
-        SdkApi idSkdApi = new JnaSdkApiInitialiser().get();
+        SimpleIdentity simpleIdentity = newSimpleIdentity(configuration, spaceData);
 
-        ResolverClient resolverClient = new ResolverClient(spaceData.resolverUrl());
-        SimpleIdentity simpleIdentity = new SimpleIdentity(idSkdApi,
-                spaceData.resolverUrl().toString(),
-                Files.readString(Path.of(configuration.identities().userSeedFile())),
-                Files.readString(Path.of(configuration.identities().agentSeedFile()))
-        );
-
-        IdManager idManager = new IdManager(resolverClient,
-                configuration.identities().user(),
-                configuration.identities().agent(),
-                simpleIdentity);
-        logger.info("user: " + idManager.userIdentity());
-        logger.info("agent: " + idManager.agentIdentity());
+        IdManager idManager = newIdManager(configuration, spaceData, simpleIdentity);
 
         GrpcHost host = new GrpcHost(spaceData, idManager);
 
@@ -75,5 +56,38 @@ public class Main {
         Observable<Twin> obs = searchApi.search(SearchApi.aSearchRequest(host.newHeaders(), f));
         obs.count().subscribe(c -> logger.info("Count=" + c));
         obs.subscribe();
+    }
+
+    @NotNull
+    private static SimpleIdentity newSimpleIdentity(Configuration configuration, SpaceData spaceData) throws IOException {
+        SdkApi idSkdApi = new JnaSdkApiInitialiser().get();
+        SimpleIdentity simpleIdentity = new SimpleIdentity(idSkdApi,
+                spaceData.resolverUrl().toString(),
+                Files.readString(Path.of(configuration.identities().userSeedFile())),
+                Files.readString(Path.of(configuration.identities().agentSeedFile()))
+        );
+        return simpleIdentity;
+    }
+
+    @NotNull
+    private static IdManager newIdManager(Configuration configuration, SpaceData spaceData, SimpleIdentity simpleIdentity) {
+        ResolverClient resolverClient = new ResolverClient(spaceData.resolverUrl());
+        IdManager idManager = new IdManager(resolverClient,
+                configuration.identities().user(),
+                configuration.identities().agent(),
+                simpleIdentity);
+        logger.info("user: " + idManager.userIdentity());
+        logger.info("agent: " + idManager.agentIdentity());
+        return idManager;
+    }
+
+    private static Configuration newConfiguration(String[] args) {
+        String configFile = "./config.yaml";
+        if (args.length == 1) {
+            configFile = args[0];
+        }
+        Configuration configuration = Configuration.NewConfiguration(configFile);
+        logger.info("Config loaded!");
+        return configuration;
     }
 }
