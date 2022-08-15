@@ -10,7 +10,7 @@ import java.util.function.Function;
 
 public class Twin {
 
-    private TwinID id;
+    private String id;
 
     private Visibility visibility;
     private GeoLocation location;
@@ -23,7 +23,7 @@ public class Twin {
         this.properties.addAll(metaResult.getPropertiesList());
         metaResult.getFeedsList().stream().map(feed -> new Feed(Twin.this, feed));
         metaResult.getInputsList().stream().map(input -> new Input(Twin.this, input));
-        this.id = t.getId();
+        this.id = t.getId().getValue();
         this.visibility = t.getVisibility();
         this.location = metaResult.getLocation();
         this.remoteHostId = remoteHostId;
@@ -33,13 +33,13 @@ public class Twin {
         this.properties.addAll(t.getPropertiesList());
         t.getFeedsList().stream().map(feedDetails -> new Feed(Twin.this, feedDetails));
         t.getInputsList().stream().map(inputDetails -> new Input(Twin.this, inputDetails));
-        this.id = t.getId();
+        this.id = t.getId().getValue();
         this.location = t.getLocation();
         this.visibility = t.getVisibility();
         this.remoteHostId = remoteHostId;
     }
 
-    public TwinID id() {
+    public String id() {
         return id;
     }
 

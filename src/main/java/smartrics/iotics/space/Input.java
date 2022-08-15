@@ -1,42 +1,30 @@
 package smartrics.iotics.space;
 
-import com.iotics.api.FeedID;
-import com.iotics.api.InputID;
-import com.iotics.api.InputMeta;
-import com.iotics.api.SearchResponse;
+import com.iotics.api.*;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class Input extends Point {
-    private Twin parent;
-
-    private String id;
 
     public Input(Twin parent, SearchResponse.InputDetails inputDetails) {
-        super(parent.remoteHostId().orElse(null), inputDetails.getPropertiesList());
-        this.parent = parent;
-        this.id = inputDetails.getInput().getId().getValue();
+        super(parent, inputDetails.getInput().getId().getValue(), inputDetails.getPropertiesList(), new ArrayList<>());
     }
 
     public Input(Twin parent, InputMeta input) {
-        super(parent.remoteHostId().orElse(null), new ArrayList<>());
-        this.parent = parent;
-        this.id = input.getInputId().getValue();
+        super(parent, input.getInputId().getValue(), new ArrayList<>(), new ArrayList<>());
     }
 
-    public Twin parent() {
-        return parent;
-    }
-
-    public String id() {
-        return id;
+    public Input(Twin parent, DescribeInputResponse value) {
+        super(parent,
+                value.getPayload().getInput().getId().getValue(),
+                value.getPayload().getResult().getPropertiesList(),
+                value.getPayload().getResult().getValuesList());
     }
 
     @Override
     public String toString() {
-        return "Input{" +
-                "id='" + id + '\'' +
-                ", point=" + super.toString() +
-                '}';
+        return "Input{point=" + super.toString() + '}';
     }
 }

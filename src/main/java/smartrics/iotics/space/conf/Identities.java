@@ -5,6 +5,11 @@ public class Identities {
     private IdentityData user;
     private String agentSeedFile;
     private IdentityData agent;
+    private IdentityData follower;
+
+    public IdentityData follower() {
+        return follower;
+    }
 
     public IdentityData user() {
         return user;
@@ -12,6 +17,10 @@ public class Identities {
 
     public void setUser(IdentityData user) {
         this.user = user;
+    }
+
+    public void setFollower(IdentityData follower) {
+        this.follower = follower;
     }
 
     public IdentityData agent() {

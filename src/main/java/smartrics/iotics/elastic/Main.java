@@ -3,6 +3,7 @@ package smartrics.iotics.elastic;
 import com.iotics.api.GeoCircle;
 import com.iotics.api.GeoLocation;
 import com.iotics.api.Scope;
+import com.iotics.sdk.identity.Identity;
 import com.iotics.sdk.identity.SimpleIdentity;
 import com.iotics.sdk.identity.experimental.ResolverClient;
 import com.iotics.sdk.identity.jna.JnaSdkApiInitialiser;
@@ -12,13 +13,17 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable;
+import rx.functions.Func1;
+import smartrics.iotics.space.Feed;
 import smartrics.iotics.space.Twin;
 import smartrics.iotics.space.api.GrpcHost;
+import smartrics.iotics.space.api.InterestsApi;
 import smartrics.iotics.space.api.SearchApi;
 import smartrics.iotics.space.api.SearchFilter;
 import smartrics.iotics.space.api.identity.IdManager;
 import smartrics.iotics.space.SpaceData;
 import smartrics.iotics.space.conf.Configuration;
+import smartrics.iotics.space.conf.IdentityData;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -33,10 +38,10 @@ public class Main {
         logger.info("Loaded space data: " + spaceData);
 
         SimpleIdentity simpleIdentity = newSimpleIdentity(configuration, spaceData);
-
         IdManager idManager = newIdManager(configuration, spaceData, simpleIdentity);
-
         GrpcHost host = new GrpcHost(spaceData, idManager);
+
+        InterestsApi interestsApi = new InterestsApi(host);
 
         SearchApi searchApi = new SearchApi(host);
         GeoCircle LONDON = GeoCircle.newBuilder()
@@ -53,9 +58,19 @@ public class Main {
                 .build();
 
 
+        Follower follower = new Follower(interestsApi, makeFollowerIdentity(configuration, simpleIdentity, idManager));
+
         Observable<Twin> obs = searchApi.search(SearchApi.aSearchRequest(host.newHeaders(), f));
-        obs.count().subscribe(c -> logger.info("Count=" + c));
-        obs.subscribe();
+        obs.flatMap((Func1<Twin, Observable<Feed>>) twin -> Observable.from(twin.feeds())).subscribe(feed -> {
+            follower.follow(host.newHeaders(), feed);
+        });
+
+
+    }
+
+    private static Identity makeFollowerIdentity(Configuration configuration, SimpleIdentity simpleIdentity, IdManager idManager) {
+        IdentityData fId = configuration.identities().follower();
+        return simpleIdentity.CreateTwinIdentityWithControlDelegation(idManager.agentIdentity(), fId.key(), fId.name());
     }
 
     @NotNull

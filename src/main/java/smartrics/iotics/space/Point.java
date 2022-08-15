@@ -4,24 +4,48 @@ import com.iotics.api.Property;
 import com.iotics.api.Value;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 public abstract class Point {
 
     private List<Property> properties = new ArrayList<>();
-    private String remoteHostId;
+    private final List<Value> values= new ArrayList<>();;
+    private Twin parent;
+    private final String id;
 
-    protected Point(String remoteHostId, List<Property> properties) {
-        this.remoteHostId = remoteHostId;
+
+    protected Point(Twin parent, String id, List<Property> properties, List<Value> values) {
+        this.parent = parent;
+        this.id = id;
         this.properties.addAll(properties);
+        this.values.addAll(values);
+    }
+
+    public String id() {
+        return id;
     }
 
     public List<Property> properties() {
-        return properties;
+        return Collections.unmodifiableList(properties);
     }
 
-    public Optional<String> remoteHostId() {
-        return Optional.ofNullable(remoteHostId);
+    public List<Value> values() {
+        return Collections.unmodifiableList(values);
+    }
+
+    public Twin parent() {
+        return parent;
+    }
+
+    @Override
+    public String toString() {
+        return "Point{" +
+                "id='" + id + '\'' +
+                ", properties=" + properties +
+                ", values=" + values +
+                ", parent=" + parent +
+                '}';
     }
 }
