@@ -4,6 +4,7 @@ import com.iotics.sdk.identity.SimpleConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 
@@ -11,10 +12,11 @@ public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws Exception {
-        SimpleConfig user = SimpleConfig.fromEnv("USER_");
-        SimpleConfig agent = SimpleConfig.fromEnv("AGENT_");
-
-        String spaceDns = System.getenv("SPACE");
+        String userIdPath = System.getProperty("user.id.path");
+        SimpleConfig user = SimpleConfig.readConf(userIdPath, SimpleConfig.fromEnv("USER_"));
+        String agentIdPath = System.getProperty("agent.id.path");
+        SimpleConfig agent = SimpleConfig.readConf(agentIdPath, SimpleConfig.fromEnv("AGENT_"));
+        String spaceDns = System.getProperty("space.dns", System.getenv("SPACE"));
 
         if (spaceDns == null) {
             throw new IllegalArgumentException("$SPACE not defined in env (SPACE=<yourSpace>.iotics.space");
