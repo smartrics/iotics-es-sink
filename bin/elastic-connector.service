@@ -1,0 +1,15 @@
+[Unit]
+Description=Elasticsearch IOTICS connector
+After=syslog.target network.target
+[Service]
+SuccessExitStatus=143
+User=ec2-user
+Group=ec2-user
+Type=forking
+
+ExecStart=/opt/iotics/elastic-connector/run.sh
+ExecStop=/bin/kill -15 $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+

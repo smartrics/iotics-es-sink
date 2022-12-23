@@ -1,0 +1,5 @@
+USER_SEED=<userseed>
+USER_KEYNAME=<userkeyname>
+AGENT_SEED=<agentseed>
+AGENT_KEYNAME=<agentkeyname>
+SPACE=<your.iotics.space>
