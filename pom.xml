@@ -108,6 +108,13 @@
             <artifactId>gson</artifactId>
             <version>2.10</version>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/dev.failsafe/failsafe -->
+        <dependency>
+            <groupId>dev.failsafe</groupId>
+            <artifactId>failsafe</artifactId>
+            <version>3.3.0</version>
+        </dependency>
+
         <!-- iotics java agent dependencies - these should not be added when via mvn rather than system -->
         <dependency>
             <groupId>com.google.protobuf</groupId>

@@ -3,8 +3,6 @@ package smartrics.iotics.elastic;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleIdentityManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.Builders;
 import smartrics.iotics.space.twins.AbstractTwinWithModel;
 import smartrics.iotics.space.twins.Follower;
@@ -17,12 +15,14 @@ public class ReceiverTwin extends AbstractTwinWithModel implements Follower, Pub
     private final FeedAPIGrpc.FeedAPIFutureStub feedStub;
     private final InterestAPIGrpc.InterestAPIStub interestStub;
     private final SearchAPIGrpc.SearchAPIStub searchStub;
+    private final InterestAPIGrpc.InterestAPIBlockingStub interestBlockingStub;
 
     public ReceiverTwin(SimpleIdentityManager sim,
                         String keyName,
                         TwinAPIGrpc.TwinAPIFutureStub twinStub,
                         FeedAPIGrpc.FeedAPIFutureStub feedStub,
                         InterestAPIGrpc.InterestAPIStub interestStub,
+                        InterestAPIGrpc.InterestAPIBlockingStub interestBlockingStub,
                         SearchAPIGrpc.SearchAPIStub searchStub,
                         Executor executor,
                         TwinID modelDid) {
@@ -30,6 +30,7 @@ public class ReceiverTwin extends AbstractTwinWithModel implements Follower, Pub
         this.feedStub = feedStub;
         this.interestStub = interestStub;
         this.searchStub = searchStub;
+        this.interestBlockingStub = interestBlockingStub;
     }
 
     @Override
@@ -94,6 +95,11 @@ public class ReceiverTwin extends AbstractTwinWithModel implements Follower, Pub
     @Override
     public InterestAPIGrpc.InterestAPIStub getInterestAPIStub() {
         return this.interestStub;
+    }
+
+    @Override
+    public InterestAPIGrpc.InterestAPIBlockingStub getInterestAPIBlockingStub() {
+        return this.interestBlockingStub;
     }
 
     @Override

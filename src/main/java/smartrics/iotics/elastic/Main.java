@@ -1,10 +1,12 @@
 package smartrics.iotics.elastic;
 
 import com.iotics.sdk.identity.SimpleConfig;
+import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import smartrics.iotics.space.HttpServiceRegistry;
+import smartrics.iotics.space.IoticSpace;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 
@@ -13,22 +15,46 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         String userIdPath = System.getProperty("user.id.path");
-        SimpleConfig user = SimpleConfig.readConf(userIdPath, SimpleConfig.fromEnv("USER_"));
+        SimpleConfig userConf = SimpleConfig.readConf(userIdPath, SimpleConfig.fromEnv("USER_"));
         String agentIdPath = System.getProperty("agent.id.path");
-        SimpleConfig agent = SimpleConfig.readConf(agentIdPath, SimpleConfig.fromEnv("AGENT_"));
+        SimpleConfig agentConf = SimpleConfig.readConf(agentIdPath, SimpleConfig.fromEnv("AGENT_"));
         String spaceDns = System.getProperty("space.dns", System.getenv("SPACE"));
 
         if (spaceDns == null) {
-            throw new IllegalArgumentException("$SPACE not defined in env (SPACE=<yourSpace>.iotics.space");
+            throw new IllegalArgumentException("space DNS not defined");
         }
 
-        if (!user.isValid() || !agent.isValid()) {
+        if (!userConf.isValid() || !agentConf.isValid()) {
             throw new IllegalStateException("invalid identity env variables");
         }
-        Connector connector = new Connector(spaceDns, user, agent);
 
+        HttpServiceRegistry sr = new HttpServiceRegistry(spaceDns);
+
+        IoticSpace ioticSpace = new IoticSpace(sr);
+        ioticSpace.initialise();
+
+        Connector connector = new Connector(ioticSpace, userConf, agentConf);
+
+        CountDownLatch done = new CountDownLatch(1);
         try {
-            connector.run().get();
+            connector.findAndBind(new StreamObserver<DataDetails>() {
+                @Override
+                public void onNext(DataDetails dataDetails) {
+                    LOGGER.info("{}", dataDetails);
+                }
+
+                @Override
+                public void onError(Throwable t) {
+
+                }
+
+                @Override
+                public void onCompleted() {
+                    done.countDown();
+                }
+            }).get();
+            LOGGER.info("Waiting to complete");
+            done.await();
         } catch (Exception e) {
             LOGGER.error("exc when calling", e);
         } finally {
