@@ -11,6 +11,8 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.IoticSpace;
+import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
+import smartrics.iotics.space.grpc.DataDetails;
 import smartrics.iotics.space.grpc.HostManagedChannelBuilderFactory;
 import smartrics.iotics.space.twins.SearchFilter;
 
@@ -20,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static smartrics.iotics.elastic.ListenableFutureAdapter.toCompletable;
+import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class Connector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Connector.class);

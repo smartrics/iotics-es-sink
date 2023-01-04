@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.HttpServiceRegistry;
 import smartrics.iotics.space.IoticSpace;
+import smartrics.iotics.space.grpc.DataDetails;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -40,12 +41,12 @@ public class Main {
             connector.findAndBind(new StreamObserver<DataDetails>() {
                 @Override
                 public void onNext(DataDetails dataDetails) {
-                    LOGGER.info("{}", dataDetails);
+                    LOGGER.info("{}", dataDetails.fetchInterestResponse().getPayload().getFeedData().getData().toStringUtf8());
                 }
 
                 @Override
                 public void onError(Throwable t) {
-
+                    LOGGER.warn("Follower stream observer error", t);
                 }
 
                 @Override
