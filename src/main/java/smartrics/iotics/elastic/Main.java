@@ -35,37 +35,14 @@ public class Main {
         ioticSpace.initialise();
 
         Connector connector = new Connector(ioticSpace, userConf, agentConf);
-
-        CountDownLatch done = new CountDownLatch(1);
         try {
-            connector.findAndBind(new StreamObserver<DataDetails>() {
-                @Override
-                public void onNext(DataDetails dataDetails) {
-                    LOGGER.info("{}", dataDetails.fetchInterestResponse().getPayload().getFeedData().getData().toStringUtf8());
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    LOGGER.warn("Follower stream observer error", t);
-                }
-
-                @Override
-                public void onCompleted() {
-                    done.countDown();
-                }
-            }).get();
-            LOGGER.info("Waiting to complete");
-            done.await();
-        } catch (Exception e) {
-            LOGGER.error("exc when calling", e);
+            connector.run();
         } finally {
-            LOGGER.info("waiting for cdl");
-            LOGGER.info("channel shutting down");
-            connector.shutdown(Duration.ofSeconds(5));
-            LOGGER.info("channel shut down --");
+                LOGGER.info("waiting for cdl");
+                LOGGER.info("channel shutting down");
+                connector.shutdown(Duration.ofSeconds(5));
+                LOGGER.info("channel shut down --");
         }
-
-
     }
 
 }

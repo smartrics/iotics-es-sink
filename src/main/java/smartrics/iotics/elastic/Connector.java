@@ -11,16 +11,17 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.IoticSpace;
-import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
 import smartrics.iotics.space.grpc.DataDetails;
 import smartrics.iotics.space.grpc.HostManagedChannelBuilderFactory;
+import smartrics.iotics.space.twins.FindAndBindTwin;
+import smartrics.iotics.space.twins.FollowerModelTwin;
 import smartrics.iotics.space.twins.SearchFilter;
 
 import java.time.Duration;
 import java.util.Timer;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
@@ -40,6 +41,8 @@ public class Connector {
     private final SimpleIdentityManager sim;
     private final ManagedChannel channel;
     private final Timer timer;
+    private FollowerModelTwin modelTwin;
+    private FindAndBindTwin findAndBindTwin;
 
     public Connector(IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf) {
         sim = SimpleIdentityManager.Builder
@@ -63,58 +66,99 @@ public class Connector {
         channel = channelBuilder
                 .keepAliveWithoutCalls(true)
                 .build();
+
+
+        initialise();
     }
 
+    private void initialise() {
+        TwinAPIGrpc.TwinAPIFutureStub twinAPIStub = TwinAPIGrpc.newFutureStub(channel);
+        FeedAPIGrpc.FeedAPIFutureStub feedAPIStub = FeedAPIGrpc.newFutureStub(channel);
+        InterestAPIGrpc.InterestAPIStub interestAPIStub = InterestAPIGrpc.newStub(channel);
+        InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub = InterestAPIGrpc.newBlockingStub(channel);
+        SearchAPIGrpc.SearchAPIStub searchAPIStub = SearchAPIGrpc.newStub(channel);
+
+        modelTwin = new FollowerModelTwin(this.sim, twinAPIStub, MoreExecutors.directExecutor());
+        ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
+
+        findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
+                .thenApply(modelID -> create(twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub, modelID))
+                .thenApply(this::delete)
+                .thenApply(this::make)
+                .get());
+    }
 
     public void shutdown(Duration timeout) throws InterruptedException {
         timer.cancel();
         channel.shutdown().awaitTermination(timeout.getSeconds(), TimeUnit.SECONDS);
     }
 
-    public CompletableFuture<Integer> findAndBind(StreamObserver<DataDetails> streamObserver) {
-        TwinAPIGrpc.TwinAPIFutureStub twinAPIStub = TwinAPIGrpc.newFutureStub(channel);
-        FeedAPIGrpc.FeedAPIFutureStub feedAPIStub = FeedAPIGrpc.newFutureStub(channel);
-        InterestAPIGrpc.InterestAPIStub interestAPIStub = InterestAPIGrpc.newStub(channel);
-        InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub = InterestAPIGrpc.newBlockingStub(channel);
-        SearchAPIGrpc.SearchAPIStub searchAPIStub = SearchAPIGrpc.newStub(channel);
-        ModelOfReceiver model = new ModelOfReceiver(this.sim, twinAPIStub, MoreExecutors.directExecutor());
-        ListenableFuture<TwinID> modelFuture = model.makeIfAbsent();
+    public void run() {
+        SearchFilter searchFilter = SearchFilter.Builder.aSearchFilter()
+                .withText(TEXT).build();
+        CountDownLatch done = new CountDownLatch(1);
+        try {
+            findAndBindTwin.findAndBind(searchFilter, new StreamObserver<>() {
+                @Override
+                public void onNext(DataDetails dataDetails) {
+                    LOGGER.info("{}", dataDetails.fetchInterestResponse().getPayload().getFeedData().getData().toStringUtf8());
+                }
 
-        CompletableFuture<Integer> resFuture = new CompletableFuture<>();
-        toCompletable(modelFuture).thenAccept((modelID) -> {
-            LOGGER.info("model id: {}", modelID);
-            ReceiverTwin receiverTwin = new ReceiverTwin(this.sim, "receiver_key_0",
-                    twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub,
-                    MoreExecutors.directExecutor(), modelID);
-            toCompletable(receiverTwin.delete()).thenAccept(deleteTwinResponse -> {
-                LOGGER.info("delete: {}", deleteTwinResponse);
-                toCompletable(receiverTwin.make()).thenAccept(upsertTwinResponse -> {
-                    LOGGER.info("upsert: {}", upsertTwinResponse);
-                });
-            }).thenRun(() -> {
-                AtomicLong counter = new AtomicLong(0);
-                StreamObserver<SearchResponse.TwinDetails> resultsStreamObserver = new AbstractLoggingStreamObserver<>("'search'") {
-                    @Override
-                    public void onNext(SearchResponse.TwinDetails twinDetails) {
-                        for (SearchResponse.FeedDetails feedDetails : twinDetails.getFeedsList()) {
-                            receiverTwin.follow(feedDetails.getFeedId(), new AbstractLoggingStreamObserver<>(feedDetails.getFeedId().toString()) {
-                                @Override
-                                public void onNext(FetchInterestResponse value) {
-                                    streamObserver.onNext(new DataDetails(twinDetails, feedDetails, value));
-                                }
-                            });
-                        }
-                    }
-                };
-                receiverTwin.search(SearchFilter.Builder.aSearchFilter()
-                        .withScope(Scope.GLOBAL)
-                        .withText(TEXT)
-//                        .withLocation(LONDON)
-                        .build(), resultsStreamObserver);
-                resFuture.complete(counter.intValue());
-            });
+                @Override
+                public void onError(Throwable t) {
+                    LOGGER.warn("Follower stream observer error", t);
+                }
+
+                @Override
+                public void onCompleted() {
+                    done.countDown();
+                }
+            }).get();
+            LOGGER.info("Waiting to complete");
+            done.await();
+        } catch (Exception e) {
+            LOGGER.error("exc when calling", e);
+        }
+    }
+
+    private FindAndBindTwin create(TwinAPIGrpc.TwinAPIFutureStub twinAPIStub, FeedAPIGrpc.FeedAPIFutureStub feedAPIStub, InterestAPIGrpc.InterestAPIStub interestAPIStub, InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub, SearchAPIGrpc.SearchAPIStub searchAPIStub, TwinID modelID) {
+        return new FindAndBindTwin(Connector.this.sim, "receiver_key_0",
+                twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub,
+                MoreExecutors.directExecutor(), modelID);
+    }
+
+    private FindAndBindTwin make(FindAndBindTwin fabt) {
+        return new SafeGetter<FindAndBindTwin>().safeGet(() -> {
+            UpsertTwinResponse upsertTwinResponse = fabt.make().get();
+            LOGGER.info("upsert: {}", upsertTwinResponse);
+            return fabt;
         });
-        return resFuture;
+    }
+
+    private FindAndBindTwin delete(FindAndBindTwin fabt) {
+        return new SafeGetter<FindAndBindTwin>().safeGet(() -> {
+            DeleteTwinResponse deleteTwinResponse = fabt.delete().get();
+            LOGGER.info("delete: {}", deleteTwinResponse);
+            return fabt;
+        });
+    }
+
+    private interface MyFuture<V> {
+        V apply() throws InterruptedException, ExecutionException;
+    }
+
+    private class SafeGetter<V> {
+        public V safeGet(MyFuture<V> delegate) {
+            try {
+                return delegate.apply();
+            } catch (InterruptedException e) {
+                Thread.interrupted();
+                throw new IllegalStateException("operation interrupted", e);
+            } catch (ExecutionException e) {
+                throw new IllegalStateException("operation failed", e);
+            }
+
+        }
     }
 
 }
