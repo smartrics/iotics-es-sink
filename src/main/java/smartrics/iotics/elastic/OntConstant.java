@@ -1,15 +1,16 @@
 package smartrics.iotics.elastic;
 
+import smartrics.iotics.space.UriConstants;
+
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public enum OntConstant {
 
-    RDF_TYPE_URI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-    RDFS_CLASS_URI("http://www.w3.org/2000/01/rdf-schema#Class"),
-    OWL_CLASS_URI( "http://www.w3.org/2002/07/owl#Class");
+    RDF_TYPE_URI(UriConstants.ON_RDF_TYPE_PROP),
+    RDFS_CLASS_URI(UriConstants.ON_RDFS_CLASS_VALUE),
+    OWL_CLASS_URI( UriConstants.ON_OWL_CLASS_VALUE);
 
     private static List<String> uris;
     private final String uri;

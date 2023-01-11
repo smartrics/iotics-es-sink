@@ -8,6 +8,7 @@ import com.iotics.api.DescribeTwinResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.Builders;
+import smartrics.iotics.space.UriConstants;
 import smartrics.iotics.space.grpc.TwinData;
 import smartrics.iotics.space.twins.Describer;
 
@@ -45,7 +46,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinData, String> {
                             .getPropertiesList()
                             .stream()
                             .filter(property -> property
-                                    .getKey().equals("http://www.w3.org/2000/01/rdf-schema#label"))
+                                    .getKey().equals(UriConstants.ON_RDFS_LABEL_PROP))
                             .map(property -> mapToJsonKey(property))
                             .toList();
                     return String.join("_", modelLabelAsString);
@@ -74,9 +75,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinData, String> {
             }
 
         });
-        String value = result.get();
-        LOGGER.info("index_prefix=", value);
-        return value;
+        return result.get();
     }
 
     private record MappedPrefix(String prefix, String key) {

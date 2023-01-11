@@ -118,8 +118,7 @@ public class Connector {
             }, new AbstractLoggingStreamObserver<>("feed>") {
                 @Override
                 public void onNext(FeedData feedData) {
-                    LOGGER.info("twin_data_index_prefix={}", indexPrefixCache.getUnchecked(feedData.twinData()));
-                    LOGGER.info("feed={} | ", feedData.feedDetails().getFeedId());
+                    LOGGER.info("feed_index={}", indexPrefixCache.getUnchecked(feedData.twinData()) + "_" + feedData.feedDetails().getFeedId().getId());
                 }
 
             }).get();
