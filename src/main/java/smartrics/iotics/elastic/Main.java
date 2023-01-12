@@ -73,8 +73,6 @@ public class Main {
                 restClient, new JacksonJsonpMapper());
         ElasticsearchAsyncClient esClient = new ElasticsearchAsyncClient(transport);
 
-        System.out.println(esClient.info().get());
-
         ESMapper mapper = new ESMapper(esClient);
 
         /** initilise iotics and run connector **/
@@ -83,7 +81,7 @@ public class Main {
         IoticSpace ioticSpace = new IoticSpace(sr);
         ioticSpace.initialise();
 
-        Connector connector = new Connector(ioticSpace, userConf, agentConf);
+        Connector connector = new Connector(ioticSpace, userConf, agentConf, mapper);
         try {
             connector.run();
         } finally {

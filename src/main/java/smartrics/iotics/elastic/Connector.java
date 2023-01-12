@@ -5,6 +5,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
+import com.google.gson.JsonObject;
 import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleConfig;
 import com.iotics.sdk.identity.SimpleIdentityManager;
@@ -14,9 +15,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.IoticSpace;
 import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
-import smartrics.iotics.space.grpc.FeedData;
+import smartrics.iotics.space.grpc.FeedDatabag;
 import smartrics.iotics.space.grpc.HostManagedChannelBuilderFactory;
-import smartrics.iotics.space.grpc.TwinData;
+import smartrics.iotics.space.grpc.TwinDatabag;
 import smartrics.iotics.space.twins.FindAndBindTwin;
 import smartrics.iotics.space.twins.FollowerModelTwin;
 import smartrics.iotics.space.twins.SearchFilter;
@@ -26,6 +27,8 @@ import java.util.Timer;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
@@ -47,9 +50,14 @@ public class Connector {
     private final Timer timer;
     private final FollowerModelTwin modelTwin;
     private final FindAndBindTwin findAndBindTwin;
-    private final LoadingCache<TwinData, String> indexPrefixCache;
+    private final LoadingCache<TwinDatabag, String> indexPrefixCache;
+    private final ESMapper esMapper;
 
-    public Connector(IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf) {
+    private static String IndexNameForFeed(String prefix, FeedID feedID) {
+        return String.join("_", prefix, feedID.getId());
+    }
+
+    public Connector(IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf, ESMapper esMapper) {
         sim = SimpleIdentityManager.Builder
                 .anIdentityManager()
                 .withAgentKeyID("#test-agent-0")
@@ -72,6 +80,7 @@ public class Connector {
                 .keepAliveWithoutCalls(true)
                 .build();
 
+        this.esMapper = esMapper;
 
         TwinAPIGrpc.TwinAPIFutureStub twinAPIStub = TwinAPIGrpc.newFutureStub(channel);
         FeedAPIGrpc.FeedAPIFutureStub feedAPIStub = FeedAPIGrpc.newFutureStub(channel);
@@ -90,7 +99,6 @@ public class Connector {
 
         // make it external
         indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin));
-
     }
 
     public void shutdown(Duration timeout) throws InterruptedException {
@@ -106,26 +114,28 @@ public class Connector {
         CountDownLatch done = new CountDownLatch(1);
 
         try {
-            findAndBindTwin.findAndBind(searchFilter, new AbstractLoggingStreamObserver<>("twin>") {
+            findAndBindTwin.findAndBind(searchFilter, new AbstractLoggingStreamObserver<>("feed>") {
                 @Override
-                public void onNext(TwinData twinData) {
+                public void onNext(FeedDatabag feedData) {
                     try {
-                        LOGGER.info("twin_data_index_prefix={}", indexPrefixCache.get(twinData));
-                    } catch (ExecutionException e) {
-                        LOGGER.error("thrown", e);
+                        String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
+                        String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
+                        JsonObject doc = Jsonifier.toJson(feedData);
+                        esMapper.index(index, doc).exceptionally(throwable -> {
+                            JsonObject o = new JsonObject();
+                            o.addProperty("error", throwable.getMessage());
+                            return o;
+                        })
+                                .thenAccept(object -> LOGGER.info("stored {}", object.toString()));
+                    } catch (Exception e) {
+                        LOGGER.error("exc when calling es store", e);
                     }
                 }
-            }, new AbstractLoggingStreamObserver<>("feed>") {
-                @Override
-                public void onNext(FeedData feedData) {
-                    LOGGER.info("feed_index={}", indexPrefixCache.getUnchecked(feedData.twinData()) + "_" + feedData.feedDetails().getFeedId().getId());
-                }
-
             }).get();
             LOGGER.info("Waiting to complete");
             done.await();
         } catch (Exception e) {
-            LOGGER.error("exc when calling", e);
+            LOGGER.error("exc when calling find and bind", e);
         }
     }
 

@@ -3,6 +3,7 @@ package smartrics.iotics.elastic;
 import com.google.common.base.Strings;
 import com.iotics.api.Property;
 import com.iotics.api.Uri;
+import org.jetbrains.annotations.NotNull;
 
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -12,8 +13,11 @@ import java.net.URL;
 public class PrefixGenerator {
     public static final String DEF_PREFIX = "def";
 
+    public static String mapKeyToJsonKey(Property property) {
+        return mapToPrefix(property.getKey());
+    }
 
-    public static String mapToJsonKey(Property property) {
+    public static String mapValueToJsonKey(Property property) {
         if(!Strings.isNullOrEmpty(property.getUriValue().getValue())) {
             return removeInvalidJsonChars(property.getUriValue().getValue());
         }
@@ -29,31 +33,36 @@ public class PrefixGenerator {
         return DEF_PREFIX;
     }
 
-    public static String mapToPrefix(Uri urlString) {
-        URI uri = URI.create(urlString.getValue());
+    public static String mapToPrefix(Uri uriObject) {
+        String propUri = uriObject.getValue();
+        return mapToPrefix(propUri);
+    }
+
+    @NotNull
+    private static String mapToPrefix(String propUri) {
+        URI uri = URI.create(propUri);
         // remove query from uri
-        URI uriWithoutQuery = null;
         try {
-            uriWithoutQuery = new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, uri.getFragment());
+            URI uriWithoutQuery = new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, uri.getFragment());
             String fragment = uriWithoutQuery.getFragment();
             String prefix = hostnameToValidKey(uriWithoutQuery.getHost());
             if (fragment != null) {
-                return prefix + "_" + fragment;
+                return String.join("_", prefix, fragment);
             }
             URL urlWithoutQuery = uriWithoutQuery.toURL();
             String[] parts = urlWithoutQuery.getPath().split("/");
-            return prefix + "_" + parts[parts.length - 1];
+            return String.join("_", prefix, parts[parts.length - 1]);
         } catch (URISyntaxException | MalformedURLException e) {
             return DEF_PREFIX;
         }
     }
 
     private static String hostnameToValidKey(String hostname) {
-        String[] parts = hostname.split(".");
+        String[] parts = hostname.split("\\.");
         if (parts.length == 1) {
             return parts[0];
         }
-        return parts[0] + "_" + parts[1];
+        return String.join("_", parts[parts.length - 1], parts[parts.length - 2]);
     }
 
 

@@ -1,6 +1,13 @@
 package smartrics.iotics.elastic;
 
 import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
+import co.elastic.clients.elasticsearch.core.IndexRequest;
+import co.elastic.clients.json.JsonData;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.io.StringReader;
+import java.util.concurrent.CompletableFuture;
 
 public class ESMapper {
 
@@ -8,5 +15,18 @@ public class ESMapper {
 
     public ESMapper(ElasticsearchAsyncClient client) {
         this.client = client;
+    }
+
+    public CompletableFuture<JsonObject> index(String indexName, JsonObject object) {
+        String jsonString = object.toString();
+        IndexRequest<JsonData> request = IndexRequest.of(i -> i
+                .index(indexName)
+                .withJson(new StringReader(jsonString))
+        );
+        return this.client.index(request).thenApply(indexResponse -> {
+            String json = indexResponse.result().jsonValue();
+            return JsonParser.parseString(json).getAsJsonObject();
+        });
+
     }
 }
