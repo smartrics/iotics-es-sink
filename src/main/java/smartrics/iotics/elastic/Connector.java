@@ -23,6 +23,7 @@ import smartrics.iotics.space.twins.FollowerModelTwin;
 import smartrics.iotics.space.twins.SearchFilter;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Timer;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -54,7 +55,7 @@ public class Connector {
     private final ESMapper esMapper;
 
     private static String IndexNameForFeed(String prefix, FeedID feedID) {
-        return String.join("_", prefix, feedID.getId());
+        return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
 
     public Connector(IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf, ESMapper esMapper) {
@@ -108,8 +109,8 @@ public class Connector {
 
     public void run() {
         SearchFilter searchFilter = SearchFilter.Builder.aSearchFilter()
-//                .withLocation(LONDON)
-                .withText(TEXT)
+                .withLocation(LONDON)
+//                .withText(TEXT)
                 .build();
         CountDownLatch done = new CountDownLatch(1);
 
@@ -122,11 +123,11 @@ public class Connector {
                         String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
                         JsonObject doc = Jsonifier.toJson(feedData);
                         esMapper.index(index, doc).exceptionally(throwable -> {
+                            throwable.printStackTrace();
                             JsonObject o = new JsonObject();
                             o.addProperty("error", throwable.getMessage());
                             return o;
-                        })
-                                .thenAccept(object -> LOGGER.info("stored {}", object.toString()));
+                        }).thenAccept(object -> LOGGER.trace("stored {}", object.toString()));
                     } catch (Exception e) {
                         LOGGER.error("exc when calling es store", e);
                     }

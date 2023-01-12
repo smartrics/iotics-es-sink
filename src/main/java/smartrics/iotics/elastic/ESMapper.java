@@ -24,8 +24,12 @@ public class ESMapper {
                 .withJson(new StringReader(jsonString))
         );
         return this.client.index(request).thenApply(indexResponse -> {
-            String json = indexResponse.result().jsonValue();
-            return JsonParser.parseString(json).getAsJsonObject();
+            JsonObject res = new JsonObject();
+            res.addProperty("id", indexResponse.id());
+            res.addProperty("status", indexResponse.result().jsonValue());
+            res.addProperty("seqNo", indexResponse.seqNo());
+            res.addProperty("index", indexResponse.index());
+            return res;
         });
 
     }
