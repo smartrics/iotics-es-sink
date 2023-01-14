@@ -1,7 +1,6 @@
 package smartrics.iotics.elastic;
 
 import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
@@ -29,14 +28,14 @@ import java.io.FileReader;
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.concurrent.CompletableFuture;
 
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws Exception {
-        /** read configuration **/
+        /**
+         * read configuration
+         */
         String userIdPath = System.getProperty("user.id.path");
         SimpleConfig userConf = SimpleConfig.readConf(userIdPath, SimpleConfig.fromEnv("USER_"));
         String agentIdPath = System.getProperty("agent.id.path");
