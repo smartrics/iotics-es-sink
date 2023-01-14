@@ -1,7 +1,6 @@
 package smartrics.iotics.elastic;
 
 import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -11,6 +10,7 @@ import com.iotics.sdk.identity.SimpleConfig;
 import com.iotics.sdk.identity.SimpleIdentityManager;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.IoticSpace;
@@ -20,31 +20,22 @@ import smartrics.iotics.space.grpc.HostManagedChannelBuilderFactory;
 import smartrics.iotics.space.grpc.TwinDatabag;
 import smartrics.iotics.space.twins.FindAndBindTwin;
 import smartrics.iotics.space.twins.FollowerModelTwin;
-import smartrics.iotics.space.twins.SearchFilter;
 
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Timer;
-import java.util.concurrent.CountDownLatch;
+import java.util.TimerTask;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class Connector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Connector.class);
 
-    private static final Duration AUTH_TOKEN_DURATION = Duration.ofSeconds(10);
-    private static final String TEXT = "joke";
-    private static final GeoCircle LONDON = GeoCircle.newBuilder()
-            .setRadiusKm(25)
-            .setLocation(GeoLocation.newBuilder()
-                    .setLat(51.509865)
-                    .setLon(-0.118092)
-                    .build())
-            .build();
+    private static final Duration AUTH_TOKEN_DURATION = Duration.ofSeconds(3600);
 
     private final SimpleIdentityManager sim;
     private final ManagedChannel channel;
@@ -53,6 +44,8 @@ public class Connector {
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
     private final ESMapper esMapper;
+
+    private CompletableFuture<Void> fnbFuture;
 
     private static String IndexNameForFeed(String prefix, FeedID feedID) {
         return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
@@ -103,21 +96,31 @@ public class Connector {
     }
 
     public void shutdown(Duration timeout) throws InterruptedException {
+        stop();
         timer.cancel();
         channel.shutdown().awaitTermination(timeout.getSeconds(), TimeUnit.SECONDS);
     }
 
-    public void run() {
-        SearchFilter searchFilter = SearchFilter.Builder.aSearchFilter()
-                .withLocation(LONDON)
-//                .withText(TEXT)
-                .build();
-        CountDownLatch done = new CountDownLatch(1);
+    public synchronized void stop() {
+        Optional.ofNullable(fnbFuture).ifPresent(v -> {
+            if(!v.isCancelled()) {
+                v.cancel(true);
+            }
+        });
+    }
 
+    public void run(SearchRequest.Payload searchPayload) {
         try {
-            findAndBindTwin.findAndBind(searchFilter, new AbstractLoggingStreamObserver<>("feed>") {
+            StreamObserver<TwinDatabag> tObs = new AbstractLoggingStreamObserver<TwinDatabag>("twin>") {
+                @Override
+                public void onNext(TwinDatabag value) {
+                    LOGGER.info("Found twin {}", value.twinDetails().getTwinId());
+                }
+            };
+            fnbFuture = findAndBindTwin.findAndBind(searchPayload, tObs,new AbstractLoggingStreamObserver<>("feed>") {
                 @Override
                 public void onNext(FeedDatabag feedData) {
+                    LOGGER.info("Received data from {}", feedData.feedDetails().getFeedId());
                     try {
                         String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
                         String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
@@ -127,14 +130,15 @@ public class Connector {
                             JsonObject o = new JsonObject();
                             o.addProperty("error", throwable.getMessage());
                             return o;
-                        }).thenAccept(object -> LOGGER.trace("stored {}", object.toString()));
+                        }).thenAccept(object -> LOGGER.info("stored {}", object.toString()));
                     } catch (Exception e) {
                         LOGGER.error("exc when calling es store", e);
                     }
                 }
-            }).get();
+            });
             LOGGER.info("Waiting to complete");
-            done.await();
+            Void v = fnbFuture.get();
+            LOGGER.info("completed! {}", v);
         } catch (Exception e) {
             LOGGER.error("exc when calling find and bind", e);
         }

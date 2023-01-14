@@ -1,0 +1,40 @@
+{
+  "expiryTimeout": "12",
+  "filter": {
+    "text": "some text",
+    "location": {
+      "location": {
+        "lat": 78.0,
+        "lon": 87.0
+      },
+      "radiusKm": 12.12
+    },
+    "properties": [
+      {
+        "key": "urikey",
+        "uriValue": {
+          "value": "urivalue"
+        }
+      },
+      {
+        "key": "literalkey",
+        "literalValue": {
+          "value": "literal"
+        }
+      },
+      {
+        "key": "stringliteralkey",
+        "stringLiteralValue": {
+          "value": "stringliteral"
+        }
+      },
+      {
+        "key": "langliteralkey",
+        "langLiteralValue": {
+          "lang": "lang",
+          "value": "langliteralvalue"
+        }
+      }
+    ]
+  }
+}

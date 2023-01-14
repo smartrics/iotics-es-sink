@@ -7,6 +7,9 @@ import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
+import com.google.protobuf.Timestamp;
+import com.google.protobuf.util.JsonFormat;
+import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleConfig;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
@@ -27,6 +30,7 @@ import java.io.FileReader;
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 
 public class Main {
@@ -39,6 +43,8 @@ public class Main {
         String agentIdPath = System.getProperty("agent.id.path");
         SimpleConfig agentConf = SimpleConfig.readConf(agentIdPath, SimpleConfig.fromEnv("AGENT_"));
         String spaceDns = System.getProperty("space.dns", System.getenv("SPACE"));
+
+        String searchRequestPath = System.getProperty("search.request.path");
 
         String elasticSearchConfPath = System.getProperty("es.conf.path");
         Gson gson = new Gson();
@@ -82,8 +88,12 @@ public class Main {
         ioticSpace.initialise();
 
         Connector connector = new Connector(ioticSpace, userConf, agentConf, mapper);
+
+        SearchRequest.Payload.Builder builder = SearchRequest.Payload.newBuilder();
+        JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);
+
         try {
-            connector.run();
+            connector.run(builder.build());
         } finally {
             LOGGER.info("waiting for cdl");
             LOGGER.info("channel shutting down");
