@@ -7,7 +7,6 @@ import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
-import com.google.protobuf.Timestamp;
 import com.google.protobuf.util.JsonFormat;
 import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleConfig;
