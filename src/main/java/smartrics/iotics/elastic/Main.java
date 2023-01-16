@@ -95,8 +95,10 @@ public class Main {
         } finally {
             LOGGER.info("waiting for cdl");
             LOGGER.info("channel shutting down");
-            connector.shutdown(Duration.ofSeconds(5));
+            connector.shutdown(Duration.ofSeconds(1));
             LOGGER.info("channel shut down --");
+            esClient.shutdown();
+            System.exit(0);
         }
     }
 

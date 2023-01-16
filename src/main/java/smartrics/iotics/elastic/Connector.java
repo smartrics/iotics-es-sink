@@ -11,6 +11,7 @@ import com.iotics.sdk.identity.SimpleIdentityManager;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.space.IoticSpace;
@@ -25,7 +26,6 @@ import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +37,8 @@ public class Connector {
 
     private static final Duration AUTH_TOKEN_DURATION = Duration.ofSeconds(3600);
 
+    private static final Duration SHARE_DATA_PERIOD = Duration.ofSeconds(5);
+
     private final SimpleIdentityManager sim;
     private final ManagedChannel channel;
     private final Timer timer;
@@ -44,6 +46,7 @@ public class Connector {
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
     private final ESMapper esMapper;
+    private final Timer shareTimer;
 
     private CompletableFuture<Void> fnbFuture;
 
@@ -63,6 +66,7 @@ public class Connector {
                 .withAgentSeed(agentConf.seed())
                 .build();
         timer = new Timer("token-scheduler");
+        shareTimer = new Timer("status-share-scheduler");
 
         ManagedChannelBuilder channelBuilder = new HostManagedChannelBuilderFactory()
                 .withSimpleIdentityManager(sim)
@@ -98,44 +102,25 @@ public class Connector {
     public void shutdown(Duration timeout) throws InterruptedException {
         stop();
         timer.cancel();
+        shareTimer.cancel();
         channel.shutdown().awaitTermination(timeout.getSeconds(), TimeUnit.SECONDS);
+        channel.shutdownNow();
     }
 
-    public synchronized void stop() {
-        Optional.ofNullable(fnbFuture).ifPresent(v -> {
-            if(!v.isCancelled()) {
-                v.cancel(true);
-            }
-        });
+    public synchronized boolean stop() {
+        if(fnbFuture != null && !fnbFuture.isDone()) {
+            boolean res = fnbFuture.cancel(true);
+            fnbFuture = null;
+            return res;
+        }
+        return true;
     }
 
     public void run(SearchRequest.Payload searchPayload) {
         try {
-            StreamObserver<TwinDatabag> tObs = new AbstractLoggingStreamObserver<TwinDatabag>("twin>") {
-                @Override
-                public void onNext(TwinDatabag value) {
-                    LOGGER.info("Found twin {}", value.twinDetails().getTwinId());
-                }
-            };
-            fnbFuture = findAndBindTwin.findAndBind(searchPayload, tObs,new AbstractLoggingStreamObserver<>("feed>") {
-                @Override
-                public void onNext(FeedDatabag feedData) {
-                    LOGGER.info("Received data from {}", feedData.feedDetails().getFeedId());
-                    try {
-                        String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
-                        String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
-                        JsonObject doc = Jsonifier.toJson(feedData);
-                        esMapper.index(index, doc).exceptionally(throwable -> {
-                            throwable.printStackTrace();
-                            JsonObject o = new JsonObject();
-                            o.addProperty("error", throwable.getMessage());
-                            return o;
-                        }).thenAccept(object -> LOGGER.info("stored {}", object.toString()));
-                    } catch (Exception e) {
-                        LOGGER.error("exc when calling es store", e);
-                    }
-                }
-            });
+            StreamObserver<FeedDatabag> fObs = feedDataStreamObserver();
+            StreamObserver<TwinDatabag> tObs = twinDatabagStreamObserver();
+            fnbFuture = findAndBindTwin.findAndBind(searchPayload, tObs, fObs);
             LOGGER.info("Waiting to complete");
             Void v = fnbFuture.get();
             LOGGER.info("completed! {}", v);
@@ -144,10 +129,55 @@ public class Connector {
         }
     }
 
-    private FindAndBindTwin create(TwinAPIGrpc.TwinAPIFutureStub twinAPIStub, FeedAPIGrpc.FeedAPIFutureStub feedAPIStub, InterestAPIGrpc.InterestAPIStub interestAPIStub, InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub, SearchAPIGrpc.SearchAPIStub searchAPIStub, TwinID modelID) {
+    @NotNull
+    private StreamObserver<TwinDatabag> twinDatabagStreamObserver() {
+        StreamObserver<TwinDatabag> tObs = new AbstractLoggingStreamObserver<>("twin>") {
+            @Override
+            public void onNext(TwinDatabag value) {
+                LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                super.onError(throwable);
+                Connector.this.fnbFuture.complete(null);
+                this.onCompleted();
+            }
+        };
+        return tObs;
+    }
+
+    @NotNull
+    private AbstractLoggingStreamObserver<FeedDatabag> feedDataStreamObserver() {
+        return new AbstractLoggingStreamObserver<>("feed>") {
+            @Override
+            public void onNext(FeedDatabag feedData) {
+                try {
+                    String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
+                    String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
+                    JsonObject doc = Jsonifier.toJson(feedData);
+                    esMapper.index(index, doc).exceptionally(throwable -> {
+                        throwable.printStackTrace();
+                        JsonObject o = new JsonObject();
+                        o.addProperty("error", throwable.getMessage());
+                        return o;
+                    }).thenAccept(object -> LOGGER.info("stored {}", object.toString()));
+                } catch (Exception e) {
+                    LOGGER.error("exc when calling es store", e);
+                }
+            }
+        };
+    }
+
+    private FindAndBindTwin create(TwinAPIGrpc.TwinAPIFutureStub twinAPIStub,
+                                   FeedAPIGrpc.FeedAPIFutureStub feedAPIStub,
+                                   InterestAPIGrpc.InterestAPIStub interestAPIStub,
+                                   InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub,
+                                   SearchAPIGrpc.SearchAPIStub searchAPIStub,
+                                   TwinID modelID) {
         return new FindAndBindTwin(Connector.this.sim, "receiver_key_0",
                 twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub,
-                MoreExecutors.directExecutor(), modelID);
+                MoreExecutors.directExecutor(), modelID, shareTimer, SHARE_DATA_PERIOD);
     }
 
     private FindAndBindTwin make(FindAndBindTwin fabt) {
