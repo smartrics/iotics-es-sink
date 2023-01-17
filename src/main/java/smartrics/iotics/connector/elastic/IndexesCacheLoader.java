@@ -1,6 +1,5 @@
-package smartrics.iotics.elastic;
+package smartrics.iotics.connector.elastic;
 
-import com.google.common.base.Strings;
 import com.google.common.cache.CacheLoader;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.iotics.api.DescribeTwinRequest;
@@ -16,7 +15,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static smartrics.iotics.elastic.PrefixGenerator.*;
+import static smartrics.iotics.connector.elastic.PrefixGenerator.*;
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 

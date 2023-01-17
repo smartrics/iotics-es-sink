@@ -1,4 +1,4 @@
-package smartrics.iotics.elastic;
+package smartrics.iotics.connector.elastic;
 
 import smartrics.iotics.space.UriConstants;
 

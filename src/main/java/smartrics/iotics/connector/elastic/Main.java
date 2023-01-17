@@ -1,4 +1,4 @@
-package smartrics.iotics.elastic;
+package smartrics.iotics.connector.elastic;
 
 import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
@@ -19,7 +19,7 @@ import org.apache.http.ssl.SSLContexts;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import smartrics.iotics.elastic.conf.EsConf;
+import smartrics.iotics.connector.elastic.conf.EsConf;
 import smartrics.iotics.space.HttpServiceRegistry;
 import smartrics.iotics.space.IoticSpace;
 
@@ -45,6 +45,9 @@ public class Main {
         String searchRequestPath = System.getProperty("search.request.path");
 
         String elasticSearchConfPath = System.getProperty("es.conf.path");
+        if(elasticSearchConfPath == null) {
+            throw new IllegalArgumentException("null path to elasticsearch conf (-Des.conf.path missing)");
+        }
         Gson gson = new Gson();
         JsonReader reader = new JsonReader(new FileReader(elasticSearchConfPath));
         EsConf esConf = gson.fromJson(reader, EsConf.class);

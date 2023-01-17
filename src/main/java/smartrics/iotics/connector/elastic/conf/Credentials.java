@@ -1,4 +1,4 @@
-package smartrics.iotics.elastic.conf;
+package smartrics.iotics.connector.elastic.conf;
 
 import com.google.common.base.Strings;
 

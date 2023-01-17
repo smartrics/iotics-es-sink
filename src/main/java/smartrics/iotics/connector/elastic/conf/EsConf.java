@@ -1,9 +1,6 @@
-package smartrics.iotics.elastic.conf;
+package smartrics.iotics.connector.elastic.conf;
 
 import com.google.common.base.Strings;
-
-import java.util.Optional;
-import java.util.function.Supplier;
 
 public record EsConf(String endpoint, Credentials credentials) {
 

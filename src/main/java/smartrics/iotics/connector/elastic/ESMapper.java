@@ -1,4 +1,4 @@
-package smartrics.iotics.elastic;
+package smartrics.iotics.connector.elastic;
 
 import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
 import co.elastic.clients.elasticsearch.core.IndexRequest;

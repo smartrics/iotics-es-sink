@@ -1,4 +1,4 @@
-package smartrics.iotics.elastic;
+package smartrics.iotics.connector.elastic;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.LoadingCache;
@@ -24,7 +24,6 @@ import smartrics.iotics.space.twins.FollowerModelTwin;
 
 import java.time.Duration;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
