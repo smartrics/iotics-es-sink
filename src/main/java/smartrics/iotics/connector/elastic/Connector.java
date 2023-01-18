@@ -156,11 +156,11 @@ public class Connector {
                     String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
                     String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
                     JsonObject doc = Jsonifier.toJson(feedData);
-                    esMapper.index(index, doc).exceptionally(throwable -> {
+                    esMapper.bulk(index, doc).exceptionally(throwable -> {
                         JsonObject o = new JsonObject();
                         o.addProperty("error", throwable.getMessage());
                         return o;
-                    }).thenAccept(object -> LOGGER.info("stored {}", object.toString()));
+                    }).thenAccept(object -> LOGGER.trace("sent to ES {}", object.toString()));
                 } catch (Exception e) {
                     LOGGER.error("exc when calling es store", e);
                 }

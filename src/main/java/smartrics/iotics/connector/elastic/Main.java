@@ -29,6 +29,7 @@ import java.io.FileReader;
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
+import java.util.Timer;
 
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
@@ -89,7 +90,7 @@ public class Main {
                 restClient, new JacksonJsonpMapper());
         ElasticsearchAsyncClient esClient = new ElasticsearchAsyncClient(transport);
 
-        ESMapper mapper = new ESMapper(esClient);
+        ESMapper mapper = new ESMapper(esClient, new Timer("bulk-op-scheduler"), esConf.bulk());
 
         /** initilise iotics and run connector **/
         HttpServiceRegistry sr = new HttpServiceRegistry(spaceDns);
