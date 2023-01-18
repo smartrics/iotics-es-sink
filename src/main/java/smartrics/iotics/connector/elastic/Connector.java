@@ -22,6 +22,7 @@ import smartrics.iotics.space.grpc.FeedDatabag;
 import smartrics.iotics.space.grpc.HostManagedChannelBuilderFactory;
 import smartrics.iotics.space.grpc.TwinDatabag;
 import smartrics.iotics.space.twins.FindAndBindTwin;
+import smartrics.iotics.space.twins.Follower;
 import smartrics.iotics.space.twins.FollowerModelTwin;
 
 import java.time.Duration;
@@ -88,7 +89,10 @@ public class Connector {
         findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
                 .thenApply(modelID -> create(twinAPIStub, feedAPIStub, interestAPIStub,
                         interestAPIBlockingStub, searchAPIStub,
-                        modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec())))
+                        modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
+                        new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
+                                connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay())
+                        ))
                 .thenApply(this::delete)
                 .thenApply(this::make)
                 .get());
@@ -153,7 +157,6 @@ public class Connector {
                     String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
                     JsonObject doc = Jsonifier.toJson(feedData);
                     esMapper.index(index, doc).exceptionally(throwable -> {
-                        throwable.printStackTrace();
                         JsonObject o = new JsonObject();
                         o.addProperty("error", throwable.getMessage());
                         return o;
@@ -171,10 +174,11 @@ public class Connector {
                                    InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub,
                                    SearchAPIGrpc.SearchAPIStub searchAPIStub,
                                    TwinID modelID,
-                                   Duration statsSharePeriod) {
+                                   Duration statsSharePeriod,
+                                   Follower.RetryConf retryConf) {
         return new FindAndBindTwin(Connector.this.sim, "receiver_key_0",
                 twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub,
-                MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod);
+                MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod, retryConf);
     }
 
     private FindAndBindTwin make(FindAndBindTwin fabt) {
