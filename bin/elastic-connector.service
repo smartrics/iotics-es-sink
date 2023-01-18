@@ -7,7 +7,7 @@ User=ec2-user
 Group=ec2-user
 Type=forking
 
-ExecStart=/opt/iotics/elastic-connector/run.sh
+ExecStart=/opt/iotics/elastic-sink-1.0-SNAPSHOT/run.sh
 ExecStop=/bin/kill -15 $MAINPID
 
 [Install]

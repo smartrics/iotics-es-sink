@@ -4,6 +4,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.gson.JsonObject;
 import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleConfig;
@@ -14,6 +15,7 @@ import io.grpc.stub.StreamObserver;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import smartrics.iotics.connector.elastic.conf.ConnConf;
 import smartrics.iotics.space.IoticSpace;
 import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
 import smartrics.iotics.space.grpc.FeedDatabag;
@@ -25,18 +27,12 @@ import smartrics.iotics.space.twins.FollowerModelTwin;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Timer;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class Connector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Connector.class);
-
-    private static final Duration AUTH_TOKEN_DURATION = Duration.ofSeconds(3600);
-
-    private static final Duration SHARE_DATA_PERIOD = Duration.ofSeconds(5);
 
     private final SimpleIdentityManager sim;
     private final ManagedChannel channel;
@@ -53,7 +49,7 @@ public class Connector {
         return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
 
-    public Connector(IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf, ESMapper esMapper) {
+    public Connector(ConnConf connConf, IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf, ESMapper esMapper) {
         sim = SimpleIdentityManager.Builder
                 .anIdentityManager()
                 .withAgentKeyID("#test-agent-0")
@@ -71,10 +67,11 @@ public class Connector {
                 .withSimpleIdentityManager(sim)
                 .withTimer(timer)
                 .withSGrpcEndpoint(ioticSpace.endpoints().grpc())
-                .withTokenTokenDuration(AUTH_TOKEN_DURATION)
+                .withTokenTokenDuration(Duration.ofSeconds(connConf.tokenDurationSec()))
                 .makeManagedChannelBuilder();
         channel = channelBuilder
-                .keepAliveWithoutCalls(true)
+                .executor(Executors.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("esc-grpc-%d").build()))
+//                .keepAliveWithoutCalls(true)
                 .build();
 
         this.esMapper = esMapper;
@@ -89,7 +86,9 @@ public class Connector {
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
-                .thenApply(modelID -> create(twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub, modelID))
+                .thenApply(modelID -> create(twinAPIStub, feedAPIStub, interestAPIStub,
+                        interestAPIBlockingStub, searchAPIStub,
+                        modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec())))
                 .thenApply(this::delete)
                 .thenApply(this::make)
                 .get());
@@ -128,25 +127,23 @@ public class Connector {
         }
     }
 
-    @NotNull
     private StreamObserver<TwinDatabag> twinDatabagStreamObserver() {
         StreamObserver<TwinDatabag> tObs = new AbstractLoggingStreamObserver<>("twin>") {
             @Override
             public void onNext(TwinDatabag value) {
-                LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
+//                LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
             }
 
-            @Override
-            public void onError(Throwable throwable) {
-                super.onError(throwable);
-                Connector.this.fnbFuture.complete(null);
-                this.onCompleted();
-            }
+//            @Override
+//            public void onError(Throwable throwable) {
+//                super.onError(throwable);
+//                Connector.this.fnbFuture.complete(null);
+//                this.onCompleted();
+//            }
         };
         return tObs;
     }
 
-    @NotNull
     private AbstractLoggingStreamObserver<FeedDatabag> feedDataStreamObserver() {
         return new AbstractLoggingStreamObserver<>("feed>") {
             @Override
@@ -173,10 +170,11 @@ public class Connector {
                                    InterestAPIGrpc.InterestAPIStub interestAPIStub,
                                    InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub,
                                    SearchAPIGrpc.SearchAPIStub searchAPIStub,
-                                   TwinID modelID) {
+                                   TwinID modelID,
+                                   Duration statsSharePeriod) {
         return new FindAndBindTwin(Connector.this.sim, "receiver_key_0",
                 twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub,
-                MoreExecutors.directExecutor(), modelID, shareTimer, SHARE_DATA_PERIOD);
+                MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod);
     }
 
     private FindAndBindTwin make(FindAndBindTwin fabt) {

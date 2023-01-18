@@ -19,6 +19,7 @@ import org.apache.http.ssl.SSLContexts;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import smartrics.iotics.connector.elastic.conf.ConnConf;
 import smartrics.iotics.connector.elastic.conf.EsConf;
 import smartrics.iotics.space.HttpServiceRegistry;
 import smartrics.iotics.space.IoticSpace;
@@ -52,6 +53,14 @@ public class Main {
         JsonReader reader = new JsonReader(new FileReader(elasticSearchConfPath));
         EsConf esConf = gson.fromJson(reader, EsConf.class);
         URL esURL = URI.create(esConf.endpoint()).toURL();
+
+        String connectorConfPath = System.getProperty("connector.conf.path");
+        if(connectorConfPath == null) {
+            throw new IllegalArgumentException("null path to connector conf (-Dconnector.conf.path missing)");
+        }
+
+        reader = new JsonReader(new FileReader(connectorConfPath));
+        ConnConf connConf = gson.fromJson(reader, ConnConf.class);
 
         if (spaceDns == null) {
             throw new IllegalArgumentException("space DNS not defined");
@@ -88,7 +97,7 @@ public class Main {
         IoticSpace ioticSpace = new IoticSpace(sr);
         ioticSpace.initialise();
 
-        Connector connector = new Connector(ioticSpace, userConf, agentConf, mapper);
+        Connector connector = new Connector(connConf, ioticSpace, userConf, agentConf, mapper);
 
         SearchRequest.Payload.Builder builder = SearchRequest.Payload.newBuilder();
         JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);

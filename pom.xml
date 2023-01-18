@@ -89,15 +89,10 @@
             <version>${slf4j.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>${slf4j.version}</version>
-        </dependency>
-        <dependency>
             <!-- jul implementation -->
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-jdk14</artifactId>
-            <version>2.0.6</version>
+            <version>1.7.32</version>
         </dependency>
         <dependency>
             <groupId>net.java.dev.jna</groupId>
@@ -141,6 +136,13 @@
             <groupId>io.grpc</groupId>
             <artifactId>grpc-netty</artifactId>
             <version>${grpc-protobuf.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/io.grpc/grpc-context -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-context</artifactId>
+            <version>1.0.1</version>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>com.google.protobuf</groupId>
