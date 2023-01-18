@@ -22,6 +22,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ESMapper {
     private static final Logger LOGGER = LoggerFactory.getLogger(ESMapper.class);
@@ -35,12 +36,12 @@ public class ESMapper {
     public ESMapper(ElasticsearchAsyncClient client, Timer timer, EsConf.Bulk bulkConf) {
         this.client = client;
         this.queue = new ConcurrentLinkedQueue<>();
+        final AtomicLong id = new AtomicLong(-1);
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
-                int id = 0;
                 while(true) {
-                    LOGGER.info("bulk[id] current queue size {}", ESMapper.this.queue.size());
+                    LOGGER.info("bulk_{} current queue size {}", id.incrementAndGet(), ESMapper.this.queue.size());
                     BulkRequest.Builder br = new BulkRequest.Builder();
                     var count = 0;
                     for (int i = 0; i < bulkConf.size(); i++) {
@@ -64,22 +65,21 @@ public class ESMapper {
                     if(count == 0) {
                         break;
                     }
-                    LOGGER.info("bulk[{}] operations with {} elements", id, count);
+                    LOGGER.info("bulk_{} operations with {} elements", id.get(), count);
                     ESMapper.this.client.bulk(br.build()).thenAccept(bulkResponse -> {
 
-                        LOGGER.info("bulk[{}] op took ingest={}. tot={}ms", id, bulkResponse.ingestTook(), bulkResponse.took());
+                        LOGGER.info("bulk_{} op took tot={}ms", id.get(), bulkResponse.took());
                         if (bulkResponse.errors()) {
-                            LOGGER.error("bulk[{}] had errors", id);
+                            LOGGER.error("bulk_{} had errors", id.get());
                             bulkResponse.items()
                                     .stream()
                                     .filter(bri -> bri.error() != null)
-                                    .forEach(bri -> LOGGER.error("bulk[{}] - err: {}", id, bri.error().reason()));
+                                    .forEach(bri -> LOGGER.error("bulk_{} - err: {}", id.get(), bri.error().reason()));
                         }
                     });
                     if(ESMapper.this.queue.size() == 0) {
                         break;
                     }
-                    id++;
                 }
             }
         }, 0, Duration.ofSeconds(bulkConf.periodSec()).toMillis());
