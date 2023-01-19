@@ -29,6 +29,12 @@ public class Jsonifier {
         o.addProperty("feedsCount", twinDetails.getFeedsCount());
         o.addProperty("inputCount", twinDetails.getInputsCount());
         o.addProperty("propertiesCount", twinDetails.getPropertiesCount());
+        if(twinDetails.hasLocation()) {
+            JsonObject location = new JsonObject();
+            location.addProperty("lat", twinDetails.getLocation().getLat());
+            location.addProperty("lon", twinDetails.getLocation().getLon());
+            o.add("location", location);
+        }
         addProperties(o, twinDetails.getPropertiesList());
         return o;
     }
