@@ -5,6 +5,7 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleConfig;
@@ -12,7 +13,6 @@ import com.iotics.sdk.identity.SimpleIdentityManager;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
-import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.connector.elastic.conf.ConnConf;
@@ -25,10 +25,16 @@ import smartrics.iotics.space.twins.FindAndBindTwin;
 import smartrics.iotics.space.twins.Follower;
 import smartrics.iotics.space.twins.FollowerModelTwin;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Timer;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
@@ -38,17 +44,13 @@ public class Connector {
     private final SimpleIdentityManager sim;
     private final ManagedChannel channel;
     private final Timer timer;
-    private final FollowerModelTwin modelTwin;
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
     private final ESMapper esMapper;
     private final Timer shareTimer;
+    private final Jsonifier jsonifier;
 
     private CompletableFuture<Void> fnbFuture;
-
-    private static String IndexNameForFeed(String prefix, FeedID feedID) {
-        return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
-    }
 
     public Connector(ConnConf connConf, IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf, ESMapper esMapper) {
         sim = SimpleIdentityManager.Builder
@@ -64,7 +66,7 @@ public class Connector {
         timer = new Timer("token-scheduler");
         shareTimer = new Timer("status-share-scheduler");
 
-        ManagedChannelBuilder channelBuilder = new HostManagedChannelBuilderFactory()
+        ManagedChannelBuilder<?> channelBuilder = new HostManagedChannelBuilderFactory()
                 .withSimpleIdentityManager(sim)
                 .withTimer(timer)
                 .withSGrpcEndpoint(ioticSpace.endpoints().grpc())
@@ -83,7 +85,7 @@ public class Connector {
         InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub = InterestAPIGrpc.newBlockingStub(channel);
         SearchAPIGrpc.SearchAPIStub searchAPIStub = SearchAPIGrpc.newStub(channel);
 
-        modelTwin = new FollowerModelTwin(this.sim, twinAPIStub, MoreExecutors.directExecutor());
+        FollowerModelTwin modelTwin = new FollowerModelTwin(this.sim, twinAPIStub, MoreExecutors.directExecutor());
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
@@ -92,13 +94,18 @@ public class Connector {
                         modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
                         new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
                                 connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay())
-                        ))
+                ))
                 .thenApply(this::delete)
                 .thenApply(this::make)
                 .get());
 
-        // make it external
-        indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin));
+        PrefixGenerator prefixGenerator = new PrefixGenerator();
+        indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin, prefixGenerator));
+        this.jsonifier = new Jsonifier(prefixGenerator);
+    }
+
+    private static String IndexNameForFeed(String prefix, FeedID feedID) {
+        return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
 
     public void shutdown(Duration timeout) throws InterruptedException {
@@ -110,7 +117,7 @@ public class Connector {
     }
 
     public synchronized boolean stop() {
-        if(fnbFuture != null && !fnbFuture.isDone()) {
+        if (fnbFuture != null && !fnbFuture.isDone()) {
             boolean res = fnbFuture.cancel(true);
             fnbFuture = null;
             return res;
@@ -135,7 +142,7 @@ public class Connector {
         StreamObserver<TwinDatabag> tObs = new AbstractLoggingStreamObserver<>("twin>") {
             @Override
             public void onNext(TwinDatabag value) {
-//                LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
+                LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
             }
 
 //            @Override
@@ -155,7 +162,7 @@ public class Connector {
                 try {
                     String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
                     String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
-                    JsonObject doc = Jsonifier.toJson(feedData);
+                    JsonObject doc = jsonifier.toJson(feedData);
                     esMapper.bulk(index, doc).exceptionally(throwable -> {
                         JsonObject o = new JsonObject();
                         o.addProperty("error", throwable.getMessage());

@@ -1,23 +1,47 @@
 package smartrics.iotics.connector.elastic;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
+import com.google.gson.Gson;
 import com.iotics.api.Property;
 import com.iotics.api.Uri;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class PrefixGenerator {
+
+    private static String RES_NAME = "prefixes.cc.json";
+
+    private final Map<String, String> prefixes;
+
+    public PrefixGenerator() {
+        InputStream res = Connector.class.getResourceAsStream(RES_NAME);
+        if(res == null) {
+            throw new IllegalArgumentException("prefixes file not found at " + RES_NAME);
+        }
+        prefixes = new Gson().fromJson(new InputStreamReader(res), Map.class);
+    }
+
     public static final String DEF_PREFIX = "def";
 
-    public static String mapKeyToJsonKey(Property property) {
+    public String mapKeyToJsonKey(Property property) {
         return mapToPrefix(property.getKey());
     }
 
-    public static String mapValueToJsonKey(Property property) {
+    public String mapValueToJsonKey(Property property) {
         if(!Strings.isNullOrEmpty(property.getUriValue().getValue())) {
             return removeInvalidJsonChars(property.getUriValue().getValue());
         }
@@ -33,13 +57,22 @@ public class PrefixGenerator {
         return DEF_PREFIX;
     }
 
-    public static String mapToPrefix(Uri uriObject) {
-        String propUri = uriObject.getValue();
-        return mapToPrefix(propUri);
+    public String mapToPrefix(String uriString) {
+        String pref = prefixes.entrySet()
+                .stream()
+                .filter(entry -> uriString.contains(entry.getValue()))
+                .map(e -> e.getKey())
+                .findFirst()
+                .orElseGet(() -> defaultMapToPrefix(uriString));
+        return pref;
+    }
+
+    public String mapToPrefix(Uri uriObject) {
+        return mapToPrefix(uriObject.getValue());
     }
 
     @NotNull
-    private static String mapToPrefix(String propUri) {
+    private static String defaultMapToPrefix(String propUri) {
         URI uri = URI.create(propUri);
         // remove query from uri
         try {

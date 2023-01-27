@@ -11,7 +11,13 @@ import java.util.List;
 
 public class Jsonifier {
 
-    public static JsonObject toJson(FetchInterestResponse fir) {
+    private final PrefixGenerator prefixGenerator;
+
+    public Jsonifier(PrefixGenerator prefixGenerator) {
+        this.prefixGenerator = prefixGenerator;
+    }
+
+    public JsonObject toJson(FetchInterestResponse fir) {
         try {
             return JsonParser.parseString(fir.getPayload().getFeedData().getData().toStringUtf8()).getAsJsonObject();
         } catch (Exception e) {
@@ -22,7 +28,7 @@ public class Jsonifier {
         }
     }
 
-    public static JsonObject toJson(SearchResponse.TwinDetails twinDetails) {
+    public JsonObject toJson(SearchResponse.TwinDetails twinDetails) {
         JsonObject o = new JsonObject();
         o.addProperty("id", twinDetails.getTwinId().getId());
         o.addProperty("hostId", twinDetails.getTwinId().getHostId());
@@ -39,7 +45,7 @@ public class Jsonifier {
         return o;
     }
 
-    public static JsonObject toJson(SearchResponse.FeedDetails feedDetails) {
+    public JsonObject toJson(SearchResponse.FeedDetails feedDetails) {
         JsonObject o = new JsonObject();
         o.addProperty("id", feedDetails.getFeedId().getId());
         o.addProperty("storeLast", feedDetails.getStoreLast());
@@ -49,7 +55,7 @@ public class Jsonifier {
         return o;
     }
 
-    public static JsonObject toJson(FeedDatabag feedData) {
+    public JsonObject toJson(FeedDatabag feedData) {
         JsonObject twin = toJson(feedData.twinData().twinDetails());
         JsonObject feed = toJson(feedData.feedDetails());
         JsonObject data = toJson(feedData.fetchInterestResponse());
@@ -59,9 +65,9 @@ public class Jsonifier {
         return twin;
     }
 
-    private static void addProperties(JsonObject o, List<Property> list) {
+    private void addProperties(JsonObject o, List<Property> list) {
         list.forEach(property -> {
-            String jsonKey = PrefixGenerator.mapKeyToJsonKey(property);
+            String jsonKey = prefixGenerator.mapKeyToJsonKey(property);
             o.addProperty(jsonKey, getValueOf(property));
         });
     }

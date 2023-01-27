@@ -24,8 +24,10 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
     private static final Logger LOGGER = LoggerFactory.getLogger(IndexesCacheLoader.class);
 
     private final Describer describer;
+    private final PrefixGenerator prefixGenerator;
 
-    public IndexesCacheLoader(Describer twin) {
+    public IndexesCacheLoader(Describer twin, PrefixGenerator prefixGenerator) {
+        this.prefixGenerator = prefixGenerator;
         this.describer = twin;
     }
 
@@ -47,7 +49,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
                             .stream()
                             .filter(property -> property
                                     .getKey().equals(UriConstants.ON_RDFS_LABEL_PROP))
-                            .map(property -> mapValueToJsonKey(property))
+                            .map(property -> prefixGenerator.mapValueToJsonKey(property))
                             .toList();
                     return String.join("_", modelLabelAsString);
                 }).get();
@@ -64,7 +66,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
                     .filter(property -> OntConstant.uris()
                             .contains(property.getKey())).map(property -> property.getUriValue())
                     .sorted()
-                    .map(s -> mapToPrefix(s))
+                    .map(s -> prefixGenerator.mapToPrefix(s))
                     .toList(); // <<  combine into an hash
             if (classes.isEmpty()) {
                 result.complete(DEF_PREFIX);
