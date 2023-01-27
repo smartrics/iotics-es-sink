@@ -100,11 +100,12 @@ public class Main {
         IoticSpace ioticSpace = new IoticSpace(sr);
         ioticSpace.initialise();
 
+        ESConfigurer esConfigurer = new ESConfigurer(esClient);
 
         SearchRequest.Payload.Builder builder = SearchRequest.Payload.newBuilder();
         JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);
 
-        Connector connector = new Connector(connConf, ioticSpace, userConf, agentConf, mapper, builder.build());
+        Connector connector = new Connector(connConf, ioticSpace, userConf, agentConf, mapper, esConfigurer, builder.build());
 
         try {
             CompletableFuture<Void> c = connector.start();

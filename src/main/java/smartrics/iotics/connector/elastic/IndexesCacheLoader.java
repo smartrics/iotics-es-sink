@@ -11,6 +11,7 @@ import smartrics.iotics.space.UriConstants;
 import smartrics.iotics.space.grpc.TwinDatabag;
 import smartrics.iotics.space.twins.Describer;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -21,10 +22,11 @@ import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(IndexesCacheLoader.class);
-
     private final Describer describer;
     private final PrefixGenerator prefixGenerator;
+
+    // all indexes managed by this connector start with "iot".
+    private static final String INDEX_PREFIX = "iot";
 
     public IndexesCacheLoader(Describer twin, PrefixGenerator prefixGenerator) {
         this.prefixGenerator = prefixGenerator;
@@ -53,7 +55,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
                             .toList();
                     return String.join("_", modelLabelAsString);
                 }).get();
-                result.complete(val);
+                result.complete(String.join("_", INDEX_PREFIX, val));
             } catch (InterruptedException e) {
                 Thread.interrupted();
                 result.completeExceptionally(new IllegalStateException("Interrupted whilst working out index prefix", e));
@@ -68,10 +70,13 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
                     .sorted()
                     .map(s -> prefixGenerator.mapToPrefix(s))
                     .toList(); // <<  combine into an hash
+            List<String> parts = new ArrayList<>(classes.size() + 1);
+            parts.add(INDEX_PREFIX);
+            parts.addAll(classes);
             if (classes.isEmpty()) {
-                result.complete(DEF_PREFIX);
+                result.complete(String.join("_", INDEX_PREFIX, DEF_PREFIX));
             } else {
-                result.complete(String.join("_", classes));
+                result.complete(String.join("_", parts));
             }
 
         });

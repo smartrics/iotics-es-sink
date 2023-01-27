@@ -24,13 +24,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static smartrics.iotics.connector.elastic.ESConfigurer.INDEX_DATE_FORMATTER;
+
 public class ESMapper {
     private static final Logger LOGGER = LoggerFactory.getLogger(ESMapper.class);
 
     private record QueueItem(String index, String jsonString){}
 
     private final ElasticsearchAsyncClient client;
-    private static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd");
     private final ConcurrentLinkedQueue<QueueItem> queue;
 
     public ESMapper(ElasticsearchAsyncClient client, Timer timer, EsConf.Bulk bulkConf) {
@@ -121,6 +122,6 @@ public class ESMapper {
 
     @NotNull
     private static String makeFullIndexName(String indexName) {
-        return String.join("_", indexName, LocalDate.now().format(formatter));
+        return String.join("_", indexName, LocalDate.now().format(INDEX_DATE_FORMATTER));
     }
 }

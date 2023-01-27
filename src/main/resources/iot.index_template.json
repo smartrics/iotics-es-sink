@@ -1,0 +1,22 @@
+{
+  "index_patterns": [
+    "iot_*"
+  ],
+  "template": {
+    "settings": {
+      "number_of_shards": 1
+    },
+    "mappings": {
+      "properties": {
+        "location": {
+          "type": "geo_point"
+        }
+      }
+    }
+  },
+  "version": 1,
+  "priority": 500,
+  "_meta": {
+    "description": "template for all iot_* indices created by iotics-es-connector"
+  }
+}

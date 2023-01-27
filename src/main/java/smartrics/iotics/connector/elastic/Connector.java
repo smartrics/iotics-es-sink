@@ -33,13 +33,14 @@ public class Connector extends AbstractConnector {
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
     private final ESMapper esMapper;
+    private final ESConfigurer esConfigurer;
     private final Timer shareTimer;
     private final SearchRequest.Payload searchPayload;
 
     private CompletableFuture<Void> fnbFuture;
 
     public Connector(ConnConf connConf, IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf,
-                     ESMapper esMapper, SearchRequest.Payload searchPayload) {
+                     ESMapper esMapper, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
         super(connConf, ioticSpace, userConf, agentConf);
 
         this.shareTimer = new Timer("status-share-scheduler");
@@ -48,6 +49,8 @@ public class Connector extends AbstractConnector {
 
         FollowerModelTwin modelTwin = new FollowerModelTwin(this.sim, twinAPIStub, MoreExecutors.directExecutor());
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
+
+        this.esConfigurer = esConfigurer;
 
         findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
                 .thenApply(modelID -> create(twinAPIStub, feedAPIStub, interestAPIStub,
@@ -84,6 +87,9 @@ public class Connector extends AbstractConnector {
 
     public CompletableFuture<Void> start() {
         try {
+            // needs to configure indices and so on
+            this.esConfigurer.run();
+
             StreamObserver<FeedDatabag> fObs = feedDataStreamObserver();
             StreamObserver<TwinDatabag> tObs = twinDatabagStreamObserver();
             fnbFuture = findAndBindTwin.findAndBind(searchPayload, tObs, fObs);
