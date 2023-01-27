@@ -13,7 +13,7 @@
   "gr": "http://purl.org/goodrelations/v1#",
   "ioticsapp": "http://data.iotics.com/app",
   "ioticsont": "http://data.iotics.com/ont",
-  "iotics": "http://data.iotics.com/public",
+  "iotics": "http://data.iotics.com/public#",
   "skos": "http://www.w3.org/2004/02/skos/core#",
   "spacerel": "http://data.ordnancesurvey.co.uk/ontology/spatialrelations/",
   "geo": "http://www.opengis.net/ont/geosparql#",

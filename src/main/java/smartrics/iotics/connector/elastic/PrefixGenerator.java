@@ -28,7 +28,7 @@ public class PrefixGenerator {
     private final Map<String, String> prefixes;
 
     public PrefixGenerator() {
-        InputStream res = Connector.class.getResourceAsStream(RES_NAME);
+        InputStream res = PrefixGenerator.class.getClassLoader().getResourceAsStream(RES_NAME);
         if(res == null) {
             throw new IllegalArgumentException("prefixes file not found at " + RES_NAME);
         }
@@ -57,28 +57,25 @@ public class PrefixGenerator {
         return DEF_PREFIX;
     }
 
-    public String mapToPrefix(String uriString) {
-        String pref = prefixes.entrySet()
-                .stream()
-                .filter(entry -> uriString.contains(entry.getValue()))
-                .map(e -> e.getKey())
-                .findFirst()
-                .orElseGet(() -> defaultMapToPrefix(uriString));
-        return pref;
-    }
-
     public String mapToPrefix(Uri uriObject) {
         return mapToPrefix(uriObject.getValue());
     }
 
     @NotNull
-    private static String defaultMapToPrefix(String propUri) {
+    private String mapToPrefix(String propUri) {
         URI uri = URI.create(propUri);
         // remove query from uri
         try {
             URI uriWithoutQuery = new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, uri.getFragment());
             String fragment = uriWithoutQuery.getFragment();
-            String prefix = hostnameToValidKey(uriWithoutQuery.getHost());
+
+            URI uriWithoutFragment = new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, null);
+            String mapTo = uriWithoutFragment.toString();
+            if(fragment != null) {
+                mapTo = mapTo + "#";
+            }
+            String prefix = findPrefix(mapTo ,hostnameToValidKey(uriWithoutQuery.getHost()));
+
             if (fragment != null) {
                 return String.join("_", prefix, fragment);
             }
@@ -113,4 +110,19 @@ public class PrefixGenerator {
     private static boolean isValidJsonChar(char c) {
         return (c == '_' || c == '$' || c == '-' || c == '+'|| (c >= 'a' && c <= 'z') ||
                 (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
-    }}
+    }
+
+
+    private String findPrefix(String uriString, String def) {
+        String pref = prefixes.entrySet()
+                .stream()
+                .filter(entry -> {
+                    System.out.println("uriString='" + uriString + "', v='" + entry.getValue() + "': " + uriString.contains(entry.getValue()));
+                    return uriString.contains(entry.getValue());
+                })
+                .map(e -> uriString.replace(e.getValue(), e.getKey()))
+                .findFirst()
+                .orElse(def);
+        return pref;
+    }
+}
