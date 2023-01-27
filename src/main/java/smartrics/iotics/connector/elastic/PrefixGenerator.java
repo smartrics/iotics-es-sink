@@ -116,10 +116,7 @@ public class PrefixGenerator {
     private String findPrefix(String uriString, String def) {
         String pref = prefixes.entrySet()
                 .stream()
-                .filter(entry -> {
-                    System.out.println("uriString='" + uriString + "', v='" + entry.getValue() + "': " + uriString.contains(entry.getValue()));
-                    return uriString.contains(entry.getValue());
-                })
+                .filter(entry -> uriString.contains(entry.getValue()))
                 .map(e -> uriString.replace(e.getValue(), e.getKey()))
                 .findFirst()
                 .orElse(def);

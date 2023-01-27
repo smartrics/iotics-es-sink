@@ -30,6 +30,8 @@ import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
 import java.util.Timer;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
@@ -98,20 +100,23 @@ public class Main {
         IoticSpace ioticSpace = new IoticSpace(sr);
         ioticSpace.initialise();
 
-        Connector connector = new Connector(connConf, ioticSpace, userConf, agentConf, mapper);
 
         SearchRequest.Payload.Builder builder = SearchRequest.Payload.newBuilder();
         JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);
 
+        Connector connector = new Connector(connConf, ioticSpace, userConf, agentConf, mapper, builder.build());
+
         try {
-            connector.run(builder.build());
+            CompletableFuture<Void> c = connector.start();
+            LOGGER.info("waiting to stop");
+            c.get();
         } finally {
-            LOGGER.info("waiting for cdl");
-            LOGGER.info("channel shutting down");
-            connector.shutdown(Duration.ofSeconds(1));
-            LOGGER.info("channel shut down --");
-            esClient.shutdown();
-            System.exit(0);
+            LOGGER.info("channel stopping down");
+            CompletableFuture<Void> d = connector.stop(Duration.ofSeconds(1));
+            d.thenAccept(unused -> esClient.shutdown())
+                    .thenAccept(unused -> System.exit(0))
+                    .complete(null);
+            LOGGER.info("channel stopping --");
         }
     }
 

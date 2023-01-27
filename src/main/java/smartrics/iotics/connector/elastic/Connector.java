@@ -4,14 +4,9 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.iotics.api.*;
 import com.iotics.sdk.identity.SimpleConfig;
-import com.iotics.sdk.identity.SimpleIdentityManager;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,71 +14,37 @@ import smartrics.iotics.connector.elastic.conf.ConnConf;
 import smartrics.iotics.space.IoticSpace;
 import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
 import smartrics.iotics.space.grpc.FeedDatabag;
-import smartrics.iotics.space.grpc.HostManagedChannelBuilderFactory;
 import smartrics.iotics.space.grpc.TwinDatabag;
 import smartrics.iotics.space.twins.FindAndBindTwin;
 import smartrics.iotics.space.twins.Follower;
 import smartrics.iotics.space.twins.FollowerModelTwin;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.time.Duration;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
-public class Connector {
+public class Connector extends AbstractConnector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Connector.class);
 
-    private final SimpleIdentityManager sim;
-    private final ManagedChannel channel;
-    private final Timer timer;
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
     private final ESMapper esMapper;
     private final Timer shareTimer;
-    private final Jsonifier jsonifier;
+    private final SearchRequest.Payload searchPayload;
 
     private CompletableFuture<Void> fnbFuture;
 
-    public Connector(ConnConf connConf, IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf, ESMapper esMapper) {
-        sim = SimpleIdentityManager.Builder
-                .anIdentityManager()
-                .withAgentKeyID("#test-agent-0")
-                .withUserKeyID("#test-user-0")
-                .withAgentKeyName(agentConf.keyName())
-                .withUserKeyName(userConf.keyName())
-                .withResolverAddress(ioticSpace.endpoints().resolver())
-                .withUserSeed(userConf.seed())
-                .withAgentSeed(agentConf.seed())
-                .build();
-        timer = new Timer("token-scheduler");
-        shareTimer = new Timer("status-share-scheduler");
+    public Connector(ConnConf connConf, IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf,
+                     ESMapper esMapper, SearchRequest.Payload searchPayload) {
+        super(connConf, ioticSpace, userConf, agentConf);
 
-        ManagedChannelBuilder<?> channelBuilder = new HostManagedChannelBuilderFactory()
-                .withSimpleIdentityManager(sim)
-                .withTimer(timer)
-                .withSGrpcEndpoint(ioticSpace.endpoints().grpc())
-                .withTokenTokenDuration(Duration.ofSeconds(connConf.tokenDurationSec()))
-                .makeManagedChannelBuilder();
-        channel = channelBuilder
-                .executor(Executors.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("esc-grpc-%d").build()))
-//                .keepAliveWithoutCalls(true)
-                .build();
-
+        this.shareTimer = new Timer("status-share-scheduler");
         this.esMapper = esMapper;
-
-        TwinAPIGrpc.TwinAPIFutureStub twinAPIStub = TwinAPIGrpc.newFutureStub(channel);
-        FeedAPIGrpc.FeedAPIFutureStub feedAPIStub = FeedAPIGrpc.newFutureStub(channel);
-        InterestAPIGrpc.InterestAPIStub interestAPIStub = InterestAPIGrpc.newStub(channel);
-        InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub = InterestAPIGrpc.newBlockingStub(channel);
-        SearchAPIGrpc.SearchAPIStub searchAPIStub = SearchAPIGrpc.newStub(channel);
+        this.searchPayload = searchPayload;
 
         FollowerModelTwin modelTwin = new FollowerModelTwin(this.sim, twinAPIStub, MoreExecutors.directExecutor());
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
@@ -101,40 +62,37 @@ public class Connector {
 
         PrefixGenerator prefixGenerator = new PrefixGenerator();
         indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin, prefixGenerator));
-        this.jsonifier = new Jsonifier(prefixGenerator);
     }
 
     private static String IndexNameForFeed(String prefix, FeedID feedID) {
         return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
 
-    public void shutdown(Duration timeout) throws InterruptedException {
-        stop();
-        timer.cancel();
-        shareTimer.cancel();
-        channel.shutdown().awaitTermination(timeout.getSeconds(), TimeUnit.SECONDS);
-        channel.shutdownNow();
+    @Override
+    public CompletableFuture<Void> stop(Duration timeout) {
+        CompletableFuture<Void> c = super.stop(timeout);
+        CompletableFuture<Void> d = new CompletableFuture<>();
+        d.thenAccept(unused -> {
+            if (fnbFuture != null && !fnbFuture.isDone()) {
+                boolean res = fnbFuture.cancel(true);
+                fnbFuture = null;
+            }
+            shareTimer.cancel();
+        });
+        return CompletableFuture.allOf(c, d);
     }
 
-    public synchronized boolean stop() {
-        if (fnbFuture != null && !fnbFuture.isDone()) {
-            boolean res = fnbFuture.cancel(true);
-            fnbFuture = null;
-            return res;
-        }
-        return true;
-    }
-
-    public void run(SearchRequest.Payload searchPayload) {
+    public CompletableFuture<Void> start() {
         try {
             StreamObserver<FeedDatabag> fObs = feedDataStreamObserver();
             StreamObserver<TwinDatabag> tObs = twinDatabagStreamObserver();
             fnbFuture = findAndBindTwin.findAndBind(searchPayload, tObs, fObs);
-            LOGGER.info("Waiting to complete");
-            Void v = fnbFuture.get();
-            LOGGER.info("completed! {}", v);
+            return fnbFuture;
         } catch (Exception e) {
             LOGGER.error("exc when calling find and bind", e);
+            CompletableFuture<Void> c = new CompletableFuture<>();
+            c.completeExceptionally(e);
+            return c;
         }
     }
 
