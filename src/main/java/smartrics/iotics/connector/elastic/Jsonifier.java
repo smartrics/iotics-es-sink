@@ -7,19 +7,30 @@ import com.iotics.api.Property;
 import com.iotics.api.SearchResponse;
 import smartrics.iotics.space.grpc.FeedDatabag;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.TimeZone;
 
 public class Jsonifier {
 
     private final PrefixGenerator prefixGenerator;
+    private final SimpleDateFormat df;
+
 
     public Jsonifier(PrefixGenerator prefixGenerator) {
         this.prefixGenerator = prefixGenerator;
+        TimeZone tz = TimeZone.getTimeZone("UTC");
+        df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        df.setTimeZone(tz);
     }
 
     public JsonObject toJson(FetchInterestResponse fir) {
         try {
-            return JsonParser.parseString(fir.getPayload().getFeedData().getData().toStringUtf8()).getAsJsonObject();
+            JsonObject val = JsonParser.parseString(fir.getPayload().getFeedData().getData().toStringUtf8()).getAsJsonObject();
+            // useful for latency and those cases when timestamp isn't sent by pubisher
+            val.addProperty("data_received_timestamp", df.format(new Date()));
+            return val;
         } catch (Exception e) {
             JsonObject o = new JsonObject();
             o.addProperty("error", e.getMessage());
