@@ -6,12 +6,10 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.gson.JsonObject;
 import com.iotics.api.*;
-import com.iotics.sdk.identity.SimpleConfig;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.connector.elastic.conf.ConnConf;
-import smartrics.iotics.space.IoticSpace;
 import smartrics.iotics.space.connector.AbstractConnector;
 import smartrics.iotics.space.connector.PrefixGenerator;
 import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
@@ -103,7 +101,7 @@ public class Connector extends AbstractConnector {
     }
 
     private StreamObserver<TwinDatabag> twinDatabagStreamObserver() {
-        StreamObserver<TwinDatabag> tObs = new AbstractLoggingStreamObserver<>("twin>") {
+        return new AbstractLoggingStreamObserver<>("twin>") {
             @Override
             public void onNext(TwinDatabag value) {
                 LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
@@ -116,7 +114,6 @@ public class Connector extends AbstractConnector {
 //                this.onCompleted();
 //            }
         };
-        return tObs;
     }
 
     private AbstractLoggingStreamObserver<FeedDatabag> feedDataStreamObserver() {
@@ -166,12 +163,11 @@ public class Connector extends AbstractConnector {
         V apply() throws InterruptedException, ExecutionException;
     }
 
-    private class SafeGetter<V> {
+    private static class SafeGetter<V> {
         public V safeGet(MyFuture<V> delegate) {
             try {
                 return delegate.apply();
             } catch (InterruptedException e) {
-                Thread.interrupted();
                 throw new IllegalStateException("operation interrupted", e);
             } catch (ExecutionException e) {
                 throw new IllegalStateException("operation failed", e);
