@@ -7,7 +7,7 @@ import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.google.gson.Gson;
 import com.google.gson.stream.JsonReader;
 import com.google.protobuf.util.JsonFormat;
-import com.iotics.api.*;
+import com.iotics.api.SearchRequest;
 import com.iotics.sdk.identity.SimpleConfig;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
@@ -23,6 +23,7 @@ import smartrics.iotics.connector.elastic.conf.ConnConf;
 import smartrics.iotics.connector.elastic.conf.EsConf;
 import smartrics.iotics.space.HttpServiceRegistry;
 import smartrics.iotics.space.IoticSpace;
+import smartrics.iotics.space.grpc.IoticsApi;
 
 import javax.net.ssl.SSLContext;
 import java.io.FileReader;
@@ -31,15 +32,12 @@ import java.net.URL;
 import java.time.Duration;
 import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws Exception {
-        /**
-         * read configuration
-         */
+        // read configuration
         String userIdPath = System.getProperty("user.id.path");
         SimpleConfig userConf = SimpleConfig.readConf(userIdPath, SimpleConfig.fromEnv("USER_"));
         String agentIdPath = System.getProperty("agent.id.path");
@@ -49,7 +47,7 @@ public class Main {
         String searchRequestPath = System.getProperty("search.request.path");
 
         String elasticSearchConfPath = System.getProperty("es.conf.path");
-        if(elasticSearchConfPath == null) {
+        if (elasticSearchConfPath == null) {
             throw new IllegalArgumentException("null path to elasticsearch conf (-Des.conf.path missing)");
         }
         Gson gson = new Gson();
@@ -58,7 +56,7 @@ public class Main {
         URL esURL = URI.create(esConf.endpoint()).toURL();
 
         String connectorConfPath = System.getProperty("connector.conf.path");
-        if(connectorConfPath == null) {
+        if (connectorConfPath == null) {
             throw new IllegalArgumentException("null path to connector conf (-Dconnector.conf.path missing)");
         }
 
@@ -73,7 +71,7 @@ public class Main {
             throw new IllegalStateException("invalid identity env variables");
         }
 
-        /** initilise elastic search client **/
+        // initialise elastic search client
         BasicCredentialsProvider credsProv = new BasicCredentialsProvider();
         credsProv.setCredentials(
                 AuthScope.ANY, new UsernamePasswordCredentials(esConf.credentials().username(), esConf.credentials().password())
@@ -94,7 +92,7 @@ public class Main {
 
         ESMapper mapper = new ESMapper(esClient, new Timer("bulk-op-scheduler"), esConf.bulk());
 
-        /** initilise iotics and run connector **/
+        // initilise iotics and run connector
         HttpServiceRegistry sr = new HttpServiceRegistry(spaceDns);
 
         IoticSpace ioticSpace = new IoticSpace(sr);
@@ -105,7 +103,8 @@ public class Main {
         SearchRequest.Payload.Builder builder = SearchRequest.Payload.newBuilder();
         JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);
 
-        Connector connector = new Connector(connConf, ioticSpace, userConf, agentConf, mapper, esConfigurer, builder.build());
+        IoticsApi api = new IoticsApi(ioticSpace, userConf, agentConf, connConf.tokenDuration());
+        Connector connector = new Connector(api, connConf, mapper, esConfigurer, builder.build());
 
         try {
             CompletableFuture<Void> c = connector.start();

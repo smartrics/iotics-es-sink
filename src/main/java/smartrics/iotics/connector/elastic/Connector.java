@@ -12,8 +12,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.connector.elastic.conf.ConnConf;
 import smartrics.iotics.space.IoticSpace;
+import smartrics.iotics.space.connector.AbstractConnector;
+import smartrics.iotics.space.connector.PrefixGenerator;
 import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
 import smartrics.iotics.space.grpc.FeedDatabag;
+import smartrics.iotics.space.grpc.IoticsApi;
 import smartrics.iotics.space.grpc.TwinDatabag;
 import smartrics.iotics.space.twins.FindAndBindTwin;
 import smartrics.iotics.space.twins.Follower;
@@ -39,23 +42,20 @@ public class Connector extends AbstractConnector {
 
     private CompletableFuture<Void> fnbFuture;
 
-    public Connector(ConnConf connConf, IoticSpace ioticSpace, SimpleConfig userConf, SimpleConfig agentConf,
-                     ESMapper esMapper, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
-        super(connConf, ioticSpace, userConf, agentConf);
+    public Connector(IoticsApi api, ConnConf connConf, ESMapper esMapper, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
+        super(api);
 
         this.shareTimer = new Timer("status-share-scheduler");
         this.esMapper = esMapper;
         this.searchPayload = searchPayload;
 
-        FollowerModelTwin modelTwin = new FollowerModelTwin(this.sim, twinAPIStub, MoreExecutors.directExecutor());
+        FollowerModelTwin modelTwin = new FollowerModelTwin(api, MoreExecutors.directExecutor());
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         this.esConfigurer = esConfigurer;
 
         findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
-                .thenApply(modelID -> create(twinAPIStub, feedAPIStub, interestAPIStub,
-                        interestAPIBlockingStub, searchAPIStub,
-                        modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
+                .thenApply(modelID -> create(modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
                         new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
                                 connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay())
                 ))
@@ -139,16 +139,10 @@ public class Connector extends AbstractConnector {
         };
     }
 
-    private FindAndBindTwin create(TwinAPIGrpc.TwinAPIFutureStub twinAPIStub,
-                                   FeedAPIGrpc.FeedAPIFutureStub feedAPIStub,
-                                   InterestAPIGrpc.InterestAPIStub interestAPIStub,
-                                   InterestAPIGrpc.InterestAPIBlockingStub interestAPIBlockingStub,
-                                   SearchAPIGrpc.SearchAPIStub searchAPIStub,
-                                   TwinID modelID,
+    private FindAndBindTwin create(TwinID modelID,
                                    Duration statsSharePeriod,
                                    Follower.RetryConf retryConf) {
-        return new FindAndBindTwin(Connector.this.sim, "receiver_key_0",
-                twinAPIStub, feedAPIStub, interestAPIStub, interestAPIBlockingStub, searchAPIStub,
+        return new FindAndBindTwin(Connector.this.getApi(), "receiver_key_0",
                 MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod, retryConf);
     }
 
