@@ -26,6 +26,7 @@ import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+import static smartrics.iotics.connector.elastic.ESMapper.indexNameForFeed;
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class Connector extends AbstractConnector {
@@ -63,10 +64,6 @@ public class Connector extends AbstractConnector {
 
         PrefixGenerator prefixGenerator = new PrefixGenerator();
         indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin, prefixGenerator));
-    }
-
-    private static String IndexNameForFeed(String prefix, FeedID feedID) {
-        return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
 
     @Override
@@ -122,7 +119,7 @@ public class Connector extends AbstractConnector {
             public void onNext(FeedDatabag feedData) {
                 try {
                     String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
-                    String index = IndexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
+                    String index = indexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
                     JsonObject doc = jsonifier.toJson(feedData);
                     esMapper.bulk(index, doc).exceptionally(throwable -> {
                         JsonObject o = new JsonObject();

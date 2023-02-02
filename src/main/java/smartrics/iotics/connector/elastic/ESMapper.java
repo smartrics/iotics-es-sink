@@ -7,6 +7,7 @@ import co.elastic.clients.elasticsearch.core.IndexResponse;
 import co.elastic.clients.json.JsonData;
 import co.elastic.clients.json.JsonpMapper;
 import com.google.gson.JsonObject;
+import com.iotics.api.FeedID;
 import jakarta.json.spi.JsonProvider;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -17,6 +18,7 @@ import java.io.StringReader;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -84,6 +86,11 @@ public class ESMapper {
                 }
             }
         }, 0, Duration.ofSeconds(bulkConf.periodSec()).toMillis());
+    }
+
+
+    public static String indexNameForFeed(String prefix, FeedID feedID) {
+        return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
 
     public CompletableFuture<JsonObject> bulk(String indexName, JsonObject object) {
