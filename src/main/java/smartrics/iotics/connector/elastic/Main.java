@@ -90,7 +90,7 @@ public class Main {
                 restClient, new JacksonJsonpMapper());
         ElasticsearchAsyncClient esClient = new ElasticsearchAsyncClient(transport);
 
-        ESMapper mapper = new ESMapper(esClient, new Timer("bulk-op-scheduler"), esConf.bulk());
+        ESSink mapper = new ESSink(esClient, new Timer("bulk-op-scheduler"), esConf.bulk());
 
         // initilise iotics and run connector
         HttpServiceRegistry sr = new HttpServiceRegistry(spaceDns);

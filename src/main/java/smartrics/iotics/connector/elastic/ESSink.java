@@ -17,9 +17,7 @@ import smartrics.iotics.connector.elastic.conf.EsConf;
 import java.io.StringReader;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
@@ -28,15 +26,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static smartrics.iotics.connector.elastic.ESConfigurer.INDEX_DATE_FORMATTER;
 
-public class ESMapper {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ESMapper.class);
+public class ESSink {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ESSink.class);
 
     private record QueueItem(String index, String jsonString){}
 
     private final ElasticsearchAsyncClient client;
     private final ConcurrentLinkedQueue<QueueItem> queue;
 
-    public ESMapper(ElasticsearchAsyncClient client, Timer timer, EsConf.Bulk bulkConf) {
+    public ESSink(ElasticsearchAsyncClient client, Timer timer, EsConf.Bulk bulkConf) {
         this.client = client;
         this.queue = new ConcurrentLinkedQueue<>();
         final AtomicLong id = new AtomicLong(-1);
@@ -44,13 +42,13 @@ public class ESMapper {
             @Override
             public void run() {
                 while(true) {
-                    LOGGER.info("bulk_{} current queue size {}", id.incrementAndGet(), ESMapper.this.queue.size());
+                    LOGGER.info("bulk_{} current queue size {}", id.incrementAndGet(), ESSink.this.queue.size());
                     BulkRequest.Builder br = new BulkRequest.Builder();
                     var count = 0;
                     for (int i = 0; i < bulkConf.size(); i++) {
                         QueueItem item = queue.poll();
                         if (item != null) {
-                            JsonpMapper jsonpMapper = ESMapper.this.client._transport().jsonpMapper();
+                            JsonpMapper jsonpMapper = ESSink.this.client._transport().jsonpMapper();
                             JsonProvider jsonProvider = jsonpMapper.jsonProvider();
                             JsonData jd = JsonData.from(jsonProvider.createParser(new StringReader(item.jsonString())), jsonpMapper);
 
@@ -69,7 +67,7 @@ public class ESMapper {
                         break;
                     }
                     LOGGER.info("bulk_{} operations with {} elements", id.get(), count);
-                    ESMapper.this.client.bulk(br.build()).thenAccept(bulkResponse -> {
+                    ESSink.this.client.bulk(br.build()).thenAccept(bulkResponse -> {
 
                         LOGGER.info("bulk_{} op took tot={}ms", id.get(), bulkResponse.took());
                         if (bulkResponse.errors()) {
@@ -80,7 +78,7 @@ public class ESMapper {
                                     .forEach(bri -> LOGGER.error("bulk_{} - err: {}", id.get(), bri.error().reason()));
                         }
                     });
-                    if(ESMapper.this.queue.size() == 0) {
+                    if(ESSink.this.queue.size() == 0) {
                         break;
                     }
                 }

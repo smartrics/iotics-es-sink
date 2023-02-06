@@ -21,12 +21,11 @@ import smartrics.iotics.space.twins.Follower;
 import smartrics.iotics.space.twins.FollowerModelTwin;
 
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static smartrics.iotics.connector.elastic.ESMapper.indexNameForFeed;
+import static smartrics.iotics.connector.elastic.ESSink.indexNameForFeed;
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class Connector extends AbstractConnector {
@@ -34,14 +33,14 @@ public class Connector extends AbstractConnector {
 
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
-    private final ESMapper esMapper;
+    private final ESSink esMapper;
     private final ESConfigurer esConfigurer;
     private final Timer shareTimer;
     private final SearchRequest.Payload searchPayload;
 
     private CompletableFuture<Void> fnbFuture;
 
-    public Connector(IoticsApi api, ConnConf connConf, ESMapper esMapper, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
+    public Connector(IoticsApi api, ConnConf connConf, ESSink esMapper, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
         super(api);
 
         this.shareTimer = new Timer("status-share-scheduler");
