@@ -12,6 +12,8 @@ import com.jayway.jsonpath.spi.json.GsonJsonProvider;
 import com.jayway.jsonpath.spi.json.JsonProvider;
 import com.jayway.jsonpath.spi.mapper.GsonMappingProvider;
 import com.jayway.jsonpath.spi.mapper.MappingProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import smartrics.iotics.connector.elastic.conf.ConnConf;
 import smartrics.iotics.space.Builders;
 import smartrics.iotics.space.grpc.IoticsApi;
@@ -31,6 +33,8 @@ import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
  * TODO: extract as a twin service - Generic JSON Twin that extends from abstract twin
  */
 public class TwinFactory {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TwinFactory.class);
 
     static {
         Configuration.setDefaults(new Configuration.Defaults() {
@@ -66,7 +70,7 @@ public class TwinFactory {
 
     public CompletableFuture<UpsertTwinResponse> make(JsonObject jsonDoc) {
         UpsertTwinRequest upsertRequest = makeUpsertRequestFor(jsonDoc);
-        System.out.println(upsertRequest);
+        LOGGER.info("upserting twin {}", upsertRequest.getPayload().getTwinId());
         return toCompletable(api.twinAPIFutureStub().upsertTwin(upsertRequest));
     }
 
@@ -88,7 +92,7 @@ public class TwinFactory {
                     .stream()
                     .filter(s -> values.get(s).isJsonPrimitive())
                     .forEach(s -> toShare.add(s, values.get(s)));
-            System.out.println("SHARING " + toShare.toString());
+            LOGGER.info("sharing data for {}: {}", twinDid, toShare);
             ShareFeedDataRequest shareFeedDataRequest = ShareFeedDataRequest.newBuilder()
                     .setHeaders(Builders.newHeadersBuilder(api.getSim().agentIdentity().did()))
                     .setArgs(ShareFeedDataRequest.Arguments.newBuilder()

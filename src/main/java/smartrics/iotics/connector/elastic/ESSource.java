@@ -47,7 +47,6 @@ public class ESSource {
                     JsonNode rootNode = mapper.readTree(response.getEntity().getContent());
                     JsonNode hitsNode = rootNode.path("hits");
                     JsonNode hitsArray = hitsNode.path("hits");
-                    System.out.println("HITS: " + hitsArray.size());
                     for (JsonNode hit : hitsArray) {
                         JsonNode source = hit.path("_source");
                         JsonElement el = JsonParser.parseReader(new StringReader(source.toPrettyString()));

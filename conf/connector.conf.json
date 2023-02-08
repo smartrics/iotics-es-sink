@@ -1,0 +1,22 @@
+{
+  "tokenDurationSec": 36000000,
+  "statsPublishPeriodSec": 10,
+
+  "retryDelaySec":  10,
+  "retryJitterSec": 5,
+  "retryBackoffDelaySec": 10,
+  "retryMaxBackoffDelaySec": 60,
+
+  "twinMapper" : {
+    "ontologyRoot": "https://smartrics.it/ont#",
+    "locationPath": "$.region.location",
+    "metadataPath": "$.region",
+    "commentPrefix": "COVID data for: ",
+    "labelPaths": ["$.region.province","$.region.name"],
+    "idPaths": ["$.region.iso", "$.region.name", "$.region.province"],
+    "feeds": [{
+      "name": "daily_data",
+      "path": "$"
+    } ]
+  }
+}

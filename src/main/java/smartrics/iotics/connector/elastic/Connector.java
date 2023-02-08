@@ -5,7 +5,10 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.gson.JsonObject;
-import com.iotics.api.*;
+import com.iotics.api.DeleteTwinResponse;
+import com.iotics.api.SearchRequest;
+import com.iotics.api.TwinID;
+import com.iotics.api.UpsertTwinResponse;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +27,8 @@ import java.time.Duration;
 import java.util.Timer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static smartrics.iotics.connector.elastic.ESSink.indexNameForFeed;
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
@@ -66,12 +71,12 @@ public class Connector extends AbstractConnector {
         indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin, prefixGenerator));
 
         // TODO: inject
-        this.twinFactory = new TwinFactory(api, connConf.twinMapper());
+        twinFactory = new TwinFactory(api, connConf.twinMapper());
     }
 
     @Override
     public CompletableFuture<Void> stop(Duration timeout) {
-        CompletableFuture<Void> b =esSource.stop();
+        CompletableFuture<Void> b = esSource.stop();
         CompletableFuture<Void> c = super.stop(timeout);
         CompletableFuture<Void> d = new CompletableFuture<>();
         d.thenAccept(unused -> {
@@ -86,7 +91,7 @@ public class Connector extends AbstractConnector {
 
     public CompletableFuture<Void> start() {
         try {
-            StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver(this.twinFactory);
+            StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver(twinFactory);
             this.esSource.run(fObj);
             // needs to configure indices and so on
             this.esConfigurer.run();
@@ -108,17 +113,13 @@ public class Connector extends AbstractConnector {
             @Override
             public void onNext(JsonObject value) {
                 CompletableFuture<UpsertTwinResponse> r = tf.make(value);
-                try {
-                    System.out.println(r.get());
-                    tf.share(value).get();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+                // TODO: should attempt to share if the upsert hasn't worked on the basis that the twin exists
+                r.thenApply(upsertTwinResponse -> tf.share(value));
             }
 
             @Override
             public void onError(Throwable t) {
-                t.printStackTrace();
+                LOGGER.error("problems upserting/sharing", t);
             }
 
             @Override

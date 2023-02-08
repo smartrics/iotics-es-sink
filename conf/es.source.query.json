@@ -1,0 +1,15 @@
+{
+  "index": "covid_info_collector_*",
+  "query": {
+    "bool": {
+      "filter": {
+        "range": {
+          "last_update": {
+            "gte": "now-2d/d",
+            "lte": "now/d"
+          }
+        }
+      }
+    }
+  }
+}

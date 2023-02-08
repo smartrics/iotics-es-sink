@@ -1,0 +1,17 @@
+{
+  "endpoint": "https://yourelastic:9200/",
+  "credentials": {
+    "username": "elasticuser",
+    "password": "pass"
+  },
+
+  "bulk" : {
+    "size": 200,
+    "periodSec": 10
+  },
+
+  "loader" : {
+    "periodSec": 300,
+    "queryFilePath": "./conf/es.source.query.json"
+  }
+}

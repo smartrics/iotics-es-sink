@@ -41,5 +41,13 @@
             </includes>
         </fileSet>
 
+        <fileSet>
+            <directory>conf/</directory>
+            <outputDirectory>conf/</outputDirectory>
+            <includes>
+                <include>*</include>
+            </includes>
+        </fileSet>
+
     </fileSets>
 </assembly>
