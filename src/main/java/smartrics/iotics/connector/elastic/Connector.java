@@ -33,25 +33,26 @@ public class Connector extends AbstractConnector {
 
     private final FindAndBindTwin findAndBindTwin;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
-    private final ESSink esMapper;
+    private final ESSink esSink;
     private final ESConfigurer esConfigurer;
     private final Timer shareTimer;
     private final SearchRequest.Payload searchPayload;
-
+    private final ESSource esSource;
+    private final TwinFactory twinFactory;
     private CompletableFuture<Void> fnbFuture;
 
-    public Connector(IoticsApi api, ConnConf connConf, ESSink esMapper, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
+    public Connector(IoticsApi api, ConnConf connConf, ESSink esSink, ESSource esSource, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
         super(api);
 
         this.shareTimer = new Timer("status-share-scheduler");
-        this.esMapper = esMapper;
+        this.esSink = esSink;
         this.searchPayload = searchPayload;
 
         FollowerModelTwin modelTwin = new FollowerModelTwin(api, MoreExecutors.directExecutor());
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         this.esConfigurer = esConfigurer;
-
+        this.esSource = esSource;
         findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
                 .thenApply(modelID -> create(modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
                         new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
@@ -63,10 +64,14 @@ public class Connector extends AbstractConnector {
 
         PrefixGenerator prefixGenerator = new PrefixGenerator();
         indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin, prefixGenerator));
+
+        // TODO: inject
+        this.twinFactory = new TwinFactory(api, connConf.twinMapper());
     }
 
     @Override
     public CompletableFuture<Void> stop(Duration timeout) {
+        CompletableFuture<Void> b =esSource.stop();
         CompletableFuture<Void> c = super.stop(timeout);
         CompletableFuture<Void> d = new CompletableFuture<>();
         d.thenAccept(unused -> {
@@ -81,6 +86,8 @@ public class Connector extends AbstractConnector {
 
     public CompletableFuture<Void> start() {
         try {
+            StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver(this.twinFactory);
+            this.esSource.run(fObj);
             // needs to configure indices and so on
             this.esConfigurer.run();
 
@@ -94,6 +101,31 @@ public class Connector extends AbstractConnector {
             c.completeExceptionally(e);
             return c;
         }
+    }
+
+    private StreamObserver<JsonObject> ioticsMapperStreamObserver(TwinFactory tf) {
+        return new StreamObserver<>() {
+            @Override
+            public void onNext(JsonObject value) {
+                CompletableFuture<UpsertTwinResponse> r = tf.make(value);
+                try {
+                    System.out.println(r.get());
+                    tf.share(value).get();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                t.printStackTrace();
+            }
+
+            @Override
+            public void onCompleted() {
+
+            }
+        };
     }
 
     private StreamObserver<TwinDatabag> twinDatabagStreamObserver() {
@@ -120,7 +152,7 @@ public class Connector extends AbstractConnector {
                     String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
                     String index = indexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
                     JsonObject doc = jsonifier.toJson(feedData);
-                    esMapper.bulk(index, doc).exceptionally(throwable -> {
+                    esSink.bulk(index, doc).exceptionally(throwable -> {
                         JsonObject o = new JsonObject();
                         o.addProperty("error", throwable.getMessage());
                         return o;

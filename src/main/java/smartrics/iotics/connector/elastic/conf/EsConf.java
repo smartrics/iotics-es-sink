@@ -2,9 +2,13 @@ package smartrics.iotics.connector.elastic.conf;
 
 import com.google.common.base.Strings;
 
+import java.time.Duration;
+import java.util.List;
+
 public record EsConf(String endpoint,
                      Credentials credentials,
-                     Bulk bulk) {
+                     Bulk bulk,
+                     Loader loader) {
 
     public EsConf validate() {
         if(Strings.isNullOrEmpty(endpoint)) {
@@ -14,7 +18,10 @@ public record EsConf(String endpoint,
         return this;
     }
 
+    public record Sink(String searchRequestPath) {}
     public record Bulk(Integer size, Integer periodSec){}
+    public record Loader(Integer periodSec, String queryFilePath){}
+
     public record Credentials(String username, String password) {
         public Credentials validate() {
             if(Strings.isNullOrEmpty(username)) {

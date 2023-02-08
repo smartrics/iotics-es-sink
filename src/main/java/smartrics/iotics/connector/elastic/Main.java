@@ -5,10 +5,12 @@ import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonReader;
 import com.google.protobuf.util.JsonFormat;
 import com.iotics.api.SearchRequest;
 import com.iotics.sdk.identity.SimpleConfig;
+import io.grpc.stub.StreamObserver;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -86,11 +88,14 @@ public class Main {
                                 .setDefaultCredentialsProvider(credsProv)
                                 .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE /* skipp ssl verification*/))
                 .build();
-        ElasticsearchTransport transport = new RestClientTransport(
-                restClient, new JacksonJsonpMapper());
+
+        Timer timer = new Timer("esSource poll timer");
+        ESSource esSource = new ESSource(restClient, timer, esConf.loader());
+
+        ElasticsearchTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
         ElasticsearchAsyncClient esClient = new ElasticsearchAsyncClient(transport);
 
-        ESSink mapper = new ESSink(esClient, new Timer("bulk-op-scheduler"), esConf.bulk());
+        ESSink sink = new ESSink(esClient, new Timer("bulk-op-scheduler"), esConf.bulk());
 
         // initilise iotics and run connector
         HttpServiceRegistry sr = new HttpServiceRegistry(spaceDns);
@@ -104,7 +109,7 @@ public class Main {
         JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);
 
         IoticsApi api = new IoticsApi(ioticSpace, userConf, agentConf, connConf.tokenDuration());
-        Connector connector = new Connector(api, connConf, mapper, esConfigurer, builder.build());
+        Connector connector = new Connector(api, connConf, sink, esSource, esConfigurer, builder.build());
 
         try {
             CompletableFuture<Void> c = connector.start();

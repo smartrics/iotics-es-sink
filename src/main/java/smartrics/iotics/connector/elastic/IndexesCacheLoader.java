@@ -4,6 +4,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.iotics.api.DescribeTwinRequest;
 import com.iotics.api.DescribeTwinResponse;
+import com.iotics.api.Property;
 import smartrics.iotics.space.Builders;
 import smartrics.iotics.space.UriConstants;
 import smartrics.iotics.space.connector.OntConstant;
@@ -33,7 +34,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
     }
 
     public String load(TwinDatabag twinData) throws ExecutionException, InterruptedException {
-        CompletableFuture<String> result = new CompletableFuture<>();
+        var result = new CompletableFuture<String>();
         twinData.optionalModelTwinID().ifPresentOrElse(modelID -> {
             // makes index from model label
             ListenableFuture<DescribeTwinResponse> fut = describer.ioticsApi().twinAPIFutureStub()
@@ -50,7 +51,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
                             .stream()
                             .filter(property -> property
                                     .getKey().equals(UriConstants.ON_RDFS_LABEL_PROP))
-                            .map(property -> prefixGenerator.mapValueToJsonKey(property))
+                            .map(prefixGenerator::mapValueToJsonKey)
                             .toList();
                     return String.join("_", modelLabelAsString);
                 }).get();
@@ -64,9 +65,9 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
             // make prefix from rdf/owl types since model not present
             List<String> classes = twinData.twinDetails().getPropertiesList().stream()
                     .filter(property -> OntConstant.uris()
-                            .contains(property.getKey())).map(property -> property.getUriValue())
+                            .contains(property.getKey())).map(Property::getUriValue)
                     .sorted()
-                    .map(s -> prefixGenerator.mapToPrefix(s))
+                    .map(prefixGenerator::mapToPrefix)
                     .toList(); // <<  combine into an hash
             List<String> parts = new ArrayList<>(classes.size() + 1);
             parts.add(INDEX_PREFIX);

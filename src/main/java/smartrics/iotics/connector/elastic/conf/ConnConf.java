@@ -3,12 +3,21 @@ package smartrics.iotics.connector.elastic.conf;
 import smartrics.iotics.space.twins.Follower;
 
 import java.time.Duration;
+import java.util.List;
 
 public record ConnConf(Long tokenDurationSec, Long statsPublishPeriodSec,
                        Long retryDelaySec, Long retryJitterSec, Long retryBackoffDelaySec,
-                       Long retryMaxBackoffDelaySec) {
+                       Long retryMaxBackoffDelaySec,
+                       TwinMapper twinMapper) {
 
-    static ConnConf DEFAULT = new ConnConf(3600L, 60L, 5L, 2L, 5L, 50L);
+    public record FeedMapper(String name, String path){}
+    public record TwinMapper(String ontologyRoot,
+                             List<String> idPaths,
+                             List<String> labelPaths,
+                             String locationPath,
+                             String commentPrefix,
+                             String metadataPath,
+                             List<FeedMapper> feeds) {}
 
     public Duration retryDelay() {
         return Duration.ofSeconds(retryDelaySec);
