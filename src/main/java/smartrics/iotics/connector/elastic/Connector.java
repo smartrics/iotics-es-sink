@@ -19,12 +19,13 @@ import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
 import smartrics.iotics.space.grpc.FeedDatabag;
 import smartrics.iotics.space.grpc.IoticsApi;
 import smartrics.iotics.space.grpc.TwinDatabag;
+import smartrics.iotics.space.twins.Describer;
 import smartrics.iotics.space.twins.FindAndBindTwin;
 import smartrics.iotics.space.twins.Follower;
 import smartrics.iotics.space.twins.FollowerModelTwin;
 
 import java.time.Duration;
-import java.util.Timer;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -36,39 +37,52 @@ import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 public class Connector extends AbstractConnector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Connector.class);
 
-    private final FindAndBindTwin findAndBindTwin;
+    private final Map<String, FindAndBindTwin> findAndBindTwins;
     private final LoadingCache<TwinDatabag, String> indexPrefixCache;
     private final ESSink esSink;
     private final ESConfigurer esConfigurer;
     private final Timer shareTimer;
-    private final SearchRequest.Payload searchPayload;
+    private final Map<String, SearchRequest.Payload> searches;
     private final ESSource esSource;
     private final TwinFactory twinFactory;
     private CompletableFuture<Void> fnbFuture;
 
-    public Connector(IoticsApi api, ConnConf connConf, ESSink esSink, ESSource esSource, ESConfigurer esConfigurer, SearchRequest.Payload searchPayload) {
+    public Connector(IoticsApi api, ConnConf connConf, ESSink esSink, ESSource esSource, ESConfigurer esConfigurer, Map<String, SearchRequest.Payload> searches) {
         super(api);
 
         this.shareTimer = new Timer("status-share-scheduler");
         this.esSink = esSink;
-        this.searchPayload = searchPayload;
+        this.searches = searches;
 
         FollowerModelTwin modelTwin = new FollowerModelTwin(api, MoreExecutors.directExecutor());
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         this.esConfigurer = esConfigurer;
         this.esSource = esSource;
-        findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
-                .thenApply(modelID -> create(modelID, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
-                        new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
-                                connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay())
-                ))
-                .thenApply(this::delete)
-                .thenApply(this::make)
-                .get());
+        this.findAndBindTwins = new HashMap<>();
+
+        searches.entrySet().forEach(stringPayloadEntry -> {
+            String keyIndex = stringPayloadEntry.getKey();
+            String label = "key_" + keyIndex;
+            FindAndBindTwin findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
+                    .thenApply(modelID -> create(modelID, keyIndex, label, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
+                            new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
+                                    connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay())
+                    ))
+                    .thenApply(Connector.this::delete)
+                    .thenApply(Connector.this::make)
+                    .get());
+            Connector.this.findAndBindTwins.put(keyIndex, findAndBindTwin);
+        });
 
         PrefixGenerator prefixGenerator = new PrefixGenerator();
-        indexPrefixCache = CacheBuilder.newBuilder().build(new IndexesCacheLoader(findAndBindTwin, prefixGenerator));
+        indexPrefixCache = CacheBuilder
+                .newBuilder()
+                .build(new IndexesCacheLoader(findAndBindTwins
+                        .values()
+                        .stream()
+                        .map((Function<FindAndBindTwin, Describer>) f -> f).toList(),
+                        prefixGenerator));
 
         // TODO: inject
         twinFactory = new TwinFactory(api, connConf.twinMapper());
@@ -82,11 +96,14 @@ public class Connector extends AbstractConnector {
         d.thenAccept(unused -> {
             if (fnbFuture != null && !fnbFuture.isDone()) {
                 boolean res = fnbFuture.cancel(true);
+                if(!res) {
+                    LOGGER.debug("future not cancelled " + fnbFuture);
+                }
                 fnbFuture = null;
             }
             shareTimer.cancel();
         });
-        return CompletableFuture.allOf(c, d);
+        return CompletableFuture.allOf(b, c, d);
     }
 
     public CompletableFuture<Void> start() {
@@ -96,9 +113,18 @@ public class Connector extends AbstractConnector {
             // needs to configure indices and so on
             this.esConfigurer.run();
 
-            StreamObserver<FeedDatabag> fObs = feedDataStreamObserver();
-            StreamObserver<TwinDatabag> tObs = twinDatabagStreamObserver();
-            fnbFuture = findAndBindTwin.findAndBind(searchPayload, tObs, fObs);
+            List<CompletableFuture<Void>> list = new ArrayList<>();
+            findAndBindTwins.keySet().forEach(keyIndex -> {
+                FindAndBindTwin findAndBindTwin = findAndBindTwins.get(keyIndex);
+                StreamObserver<FeedDatabag> fObs = feedDataStreamObserver();
+                StreamObserver<TwinDatabag> tObs = twinDatabagStreamObserver();
+                SearchRequest.Payload payload = searches.get(keyIndex);
+                CompletableFuture<Void> f = findAndBindTwin.findAndBind(payload, tObs, fObs);
+                list.add(f);
+            });
+
+
+            fnbFuture = CompletableFuture.allOf(list.toArray(new CompletableFuture[0]));
             return fnbFuture;
         } catch (Exception e) {
             LOGGER.error("exc when calling find and bind", e);
@@ -120,6 +146,7 @@ public class Connector extends AbstractConnector {
             @Override
             public void onError(Throwable t) {
                 LOGGER.error("problems upserting/sharing", t);
+                t.printStackTrace();
             }
 
             @Override
@@ -136,12 +163,6 @@ public class Connector extends AbstractConnector {
                 LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
             }
 
-//            @Override
-//            public void onError(Throwable throwable) {
-//                super.onError(throwable);
-//                Connector.this.fnbFuture.complete(null);
-//                this.onCompleted();
-//            }
         };
     }
 
@@ -166,9 +187,11 @@ public class Connector extends AbstractConnector {
     }
 
     private FindAndBindTwin create(TwinID modelID,
+                                   String keyIndex,
+                                   String label,
                                    Duration statsSharePeriod,
                                    Follower.RetryConf retryConf) {
-        return new FindAndBindTwin(Connector.this.getApi(), "receiver_key_0",
+        return new FindAndBindTwin(Connector.this.getApi(), "receiver_key_" + keyIndex, label,
                 MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod, retryConf);
     }
 

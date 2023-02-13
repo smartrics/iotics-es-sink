@@ -81,12 +81,7 @@ public class ESSource {
 
     public CompletableFuture<Void> stop() {
         CompletableFuture<Void> f = new CompletableFuture<>();
-        f.thenRun(new Runnable() {
-            @Override
-            public void run() {
-                ESSource.this.timer.cancel();
-            }
-        }).complete(null);
+        f.thenRun(() -> ESSource.this.timer.cancel()).complete(null);
         return f;
     }
 }

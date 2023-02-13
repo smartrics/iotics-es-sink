@@ -32,8 +32,10 @@ import java.io.FileReader;
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
-import java.util.Timer;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
@@ -46,7 +48,7 @@ public class Main {
         SimpleConfig agentConf = SimpleConfig.readConf(agentIdPath, SimpleConfig.fromEnv("AGENT_"));
         String spaceDns = System.getProperty("space.dns", System.getenv("SPACE"));
 
-        String searchRequestPath = System.getProperty("search.request.path");
+        String searchRequestPaths = System.getProperty("search.request.path");
 
         String elasticSearchConfPath = System.getProperty("es.conf.path");
         if (elasticSearchConfPath == null) {
@@ -105,11 +107,19 @@ public class Main {
 
         ESConfigurer esConfigurer = new ESConfigurer(esClient);
 
-        SearchRequest.Payload.Builder builder = SearchRequest.Payload.newBuilder();
-        JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(searchRequestPath), builder);
+        Map<String, SearchRequest.Payload> searches = new HashMap<>();
+        Set<String> spSet = new HashSet<>();
+        Collections.addAll(spSet, searchRequestPaths.split(","));
+        spSet = spSet.stream().map(String::trim).collect(Collectors.toSet());
+        String[] spPath = spSet.toArray(new String[0]);
+        for(int i = 0; i < spPath.length; i++) {
+            SearchRequest.Payload.Builder searchRequestBuilder = SearchRequest.Payload.newBuilder();
+            JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(spPath[i]), searchRequestBuilder);
+            searches.put(Integer.toString(i), searchRequestBuilder.build());
+        }
 
         IoticsApi api = new IoticsApi(ioticSpace, userConf, agentConf, connConf.tokenDuration());
-        Connector connector = new Connector(api, connConf, sink, esSource, esConfigurer, builder.build());
+        Connector connector = new Connector(api, connConf, sink, esSource, esConfigurer, searches);
 
         try {
             CompletableFuture<Void> c = connector.start();

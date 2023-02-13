@@ -25,42 +25,44 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
 
     // all indexes managed by this connector start with "iot".
     private static final String INDEX_PREFIX = "iot";
-    private final Describer describer;
+    private final List<Describer> describers;
     private final PrefixGenerator prefixGenerator;
 
-    public IndexesCacheLoader(Describer twin, PrefixGenerator prefixGenerator) {
+    public IndexesCacheLoader(List<Describer> twins, PrefixGenerator prefixGenerator) {
         this.prefixGenerator = prefixGenerator;
-        this.describer = twin;
+        this.describers = List.copyOf(twins);
     }
 
     public String load(TwinDatabag twinData) throws ExecutionException, InterruptedException {
         var result = new CompletableFuture<String>();
         twinData.optionalModelTwinID().ifPresentOrElse(modelID -> {
-            // makes index from model label
-            ListenableFuture<DescribeTwinResponse> fut = describer.ioticsApi().twinAPIFutureStub()
-                    .describeTwin(DescribeTwinRequest.newBuilder()
-                            .setHeaders(Builders.newHeadersBuilder(describer.getAgentIdentity().did()).build())
-                            .setArgs(DescribeTwinRequest.Arguments.newBuilder().setTwinId(modelID)
-                                    .build()).build());
-            try {
-                String val = toCompletable(fut).thenApply(describeTwinResponse -> {
-                    List<String> modelLabelAsString = describeTwinResponse
-                            .getPayload()
-                            .getResult()
-                            .getPropertiesList()
-                            .stream()
-                            .filter(property -> property
-                                    .getKey().equals(UriConstants.ON_RDFS_LABEL_PROP))
-                            .map(prefixGenerator::mapValueToJsonKey)
-                            .toList();
-                    return String.join("_", modelLabelAsString);
-                }).get();
-                result.complete(String.join("_", INDEX_PREFIX, val));
-            } catch (InterruptedException e) {
-                result.completeExceptionally(new IllegalStateException("Interrupted whilst working out index prefix", e));
-            } catch (ExecutionException e) {
-                result.completeExceptionally(new IllegalStateException("Unable to work index prefix from twin model", e));
+            for(Describer describer: describers) {
+                ListenableFuture<DescribeTwinResponse> fut = describer.ioticsApi().twinAPIFutureStub()
+                        .describeTwin(DescribeTwinRequest.newBuilder()
+                                .setHeaders(Builders.newHeadersBuilder(describer.getAgentIdentity().did()).build())
+                                .setArgs(DescribeTwinRequest.Arguments.newBuilder().setTwinId(modelID)
+                                        .build()).build());
+                try {
+                    String val = toCompletable(fut).thenApply(describeTwinResponse -> {
+                        List<String> modelLabelAsString = describeTwinResponse
+                                .getPayload()
+                                .getResult()
+                                .getPropertiesList()
+                                .stream()
+                                .filter(property -> property
+                                        .getKey().equals(UriConstants.ON_RDFS_LABEL_PROP))
+                                .map(prefixGenerator::mapValueToJsonKey)
+                                .toList();
+                        return String.join("_", modelLabelAsString);
+                    }).get();
+                    result.complete(String.join("_", INDEX_PREFIX, val));
+                } catch (InterruptedException e) {
+                    result.completeExceptionally(new IllegalStateException("Interrupted whilst working out index prefix", e));
+                } catch (ExecutionException e) {
+                    result.completeExceptionally(new IllegalStateException("Unable to work index prefix from twin model", e));
+                }
             }
+            // makes index from model label
         }, () -> {
             // make prefix from rdf/owl types since model not present
             List<String> classes = twinData.twinDetails().getPropertiesList().stream()

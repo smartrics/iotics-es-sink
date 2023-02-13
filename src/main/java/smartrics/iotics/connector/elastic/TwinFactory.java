@@ -24,6 +24,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static smartrics.iotics.space.UriConstants.*;
@@ -118,54 +119,60 @@ public class TwinFactory {
     private UpsertTwinRequest makeUpsertRequestFor(JsonObject makeTwinFor) {
         DocumentContext jsonContext = JsonPath.parse(makeTwinFor.toString());
 
-        JsonObject location = jsonContext.read(twinMapperConf.locationPath());
-
-        JsonObject metadata = jsonContext.read(twinMapperConf.metadataPath());
-        List<Property> props = metadata.keySet()
-                .stream()
-                .filter(s -> metadata.get(s).isJsonPrimitive())
-                .map(s -> Property.newBuilder()
-                        .setKey(twinMapperConf.ontologyRoot() + s)
-                        .setStringLiteralValue(
-                                StringLiteral.newBuilder()
-                                        .setValue(metadata.get(s).getAsString())
-                                        .build())
-                        .build()).toList();
-
         int twinId = twinMapperConf
                 .idPaths()
                 .stream()
                 .map(s -> ((JsonPrimitive) jsonContext.read(s)).getAsString())
                 .collect(Collectors.joining("|")).hashCode();
 
-        String twinLabel = twinMapperConf
-                .labelPaths()
-                .stream()
-                .map(s -> ((JsonPrimitive) jsonContext.read(s)).getAsString())
-                .collect(Collectors.joining(", "));
-
         UpsertTwinRequest.Builder reqBuilder = UpsertTwinRequest.newBuilder()
                 .setHeaders(Builders.newHeadersBuilder(api.getSim().agentIdentity().did()));
         UpsertTwinRequest.Payload.Builder payloadBuilder = UpsertTwinRequest.Payload.newBuilder();
         payloadBuilder.setTwinId(TwinID.newBuilder().setId(api.getSim().newTwinIdentity("key_" + twinId).did()));
         payloadBuilder.setVisibility(Visibility.PUBLIC);
-        payloadBuilder.setLocation(GeoLocation.newBuilder()
-                .setLon(location.get("lon").getAsDouble())
-                .setLat(location.get("lat").getAsDouble())
-                .build());
-        props.forEach(payloadBuilder::addProperties);
         payloadBuilder.addProperties(Property.newBuilder()
                 .setKey(IOTICS_PUBLIC_ALLOW_LIST_PROP)
                 .setUriValue(Uri.newBuilder().setValue(IOTICS_PUBLIC_ALLOW_ALL_VALUE).build())
                 .build());
-        payloadBuilder.addProperties(Property.newBuilder()
-                .setKey(ON_RDFS_LABEL_PROP)
-                .setLiteralValue(Literal.newBuilder().setValue(twinLabel).build())
-                .build());
-        payloadBuilder.addProperties(Property.newBuilder()
-                .setKey(ON_RDFS_COMMENT_PROP)
-                .setLiteralValue(Literal.newBuilder().setValue(twinMapperConf.commentPrefix() + "'" + twinLabel + "'").build())
-                .build());
+
+        runSilently(() -> {
+            JsonObject metadata = jsonContext.read(twinMapperConf.metadataPath());
+            List<Property> props = metadata.keySet()
+                    .stream()
+                    .filter(s -> metadata.get(s).isJsonPrimitive())
+                    .map(s -> Property.newBuilder()
+                            .setKey(twinMapperConf.ontologyRoot() + s)
+                            .setStringLiteralValue(
+                                    StringLiteral.newBuilder()
+                                            .setValue(metadata.get(s).getAsString())
+                                            .build())
+                            .build()).toList();
+            props.forEach(payloadBuilder::addProperties);
+        });
+
+        runSilently(() -> {
+            JsonObject location = jsonContext.read(twinMapperConf.locationPath());
+            payloadBuilder.setLocation(GeoLocation.newBuilder()
+                    .setLon(location.get("lon").getAsDouble())
+                    .setLat(location.get("lat").getAsDouble())
+                    .build());
+        });
+
+        runSilently(() -> {
+            String twinLabel = twinMapperConf
+                    .labelPaths()
+                    .stream()
+                    .map(s -> ((JsonPrimitive) jsonContext.read(s)).getAsString())
+                    .collect(Collectors.joining(", "));
+            payloadBuilder.addProperties(Property.newBuilder()
+                    .setKey(ON_RDFS_LABEL_PROP)
+                    .setLiteralValue(Literal.newBuilder().setValue(twinLabel).build())
+                    .build());
+            payloadBuilder.addProperties(Property.newBuilder()
+                    .setKey(ON_RDFS_COMMENT_PROP)
+                    .setLiteralValue(Literal.newBuilder().setValue(twinMapperConf.commentPrefix() + "'" + twinLabel + "'").build())
+                    .build());
+        });
 
         twinMapperConf.feeds().forEach(feedMapper -> {
             UpsertFeedWithMeta.Builder builder = UpsertFeedWithMeta.newBuilder()
@@ -179,15 +186,18 @@ public class TwinFactory {
                             .setKey(ON_RDFS_LABEL_PROP)
                             .setLiteralValue(Literal.newBuilder().setValue(feedMapper.name()).build())
                             .build());
-            JsonObject values = jsonContext.read(feedMapper.path());
-            values.keySet()
-                    .stream()
-                    .filter(s -> values.get(s).isJsonPrimitive())
-                    .forEach(s -> builder.addValues(Value.newBuilder()
-                    .setLabel(s)
-                    .setDataType("string")
-                    .setComment("Comment for '" + s + "'")
-                    .build()));
+            runSilently(() -> {
+                JsonObject values = jsonContext.read(feedMapper.path());
+                values.keySet()
+                        .stream()
+                        .filter(s -> values.get(s).isJsonPrimitive())
+                        .forEach(s -> builder.addValues(Value.newBuilder()
+                                .setLabel(s)
+                                .setDataType("string")
+                                .setComment("Comment for '" + s + "'")
+                                .build()));
+
+            });
             payloadBuilder.addFeeds(builder.build());
 
         });
@@ -195,5 +205,13 @@ public class TwinFactory {
         reqBuilder.setPayload(payloadBuilder.build());
 
         return reqBuilder.build();
+    }
+
+    private static void runSilently(Runnable r) {
+        try {
+            r.run();
+        } catch (Exception e) {
+            LOGGER.warn("exception when running runnable: {}", e.getMessage());
+        }
     }
 }

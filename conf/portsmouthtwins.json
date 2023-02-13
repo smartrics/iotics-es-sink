@@ -1,0 +1,11 @@
+{
+  "filter": {
+    "location": {
+      "location": {
+        "lat": 50.805832,
+        "lon": -1.087222
+      },
+      "radiusKm": 25.0
+    }
+  }
+}
