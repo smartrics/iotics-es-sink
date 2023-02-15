@@ -1,6 +1,7 @@
 package smartrics.iotics.connector.elastic;
 
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -19,16 +20,13 @@ import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
 import smartrics.iotics.space.grpc.FeedDatabag;
 import smartrics.iotics.space.grpc.IoticsApi;
 import smartrics.iotics.space.grpc.TwinDatabag;
-import smartrics.iotics.space.twins.Describer;
-import smartrics.iotics.space.twins.FindAndBindTwin;
-import smartrics.iotics.space.twins.Follower;
-import smartrics.iotics.space.twins.FollowerModelTwin;
+import smartrics.iotics.space.twins.*;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Consumer;
+import java.util.concurrent.Executor;
 import java.util.function.Function;
 
 import static smartrics.iotics.connector.elastic.ESSink.indexNameForFeed;
@@ -44,17 +42,20 @@ public class Connector extends AbstractConnector {
     private final Timer shareTimer;
     private final Map<String, SearchRequest.Payload> searches;
     private final ESSource esSource;
-    private final TwinFactory twinFactory;
+    private final ConnConf connConf;
+    private final Executor executor;
     private CompletableFuture<Void> fnbFuture;
 
     public Connector(IoticsApi api, ConnConf connConf, ESSink esSink, ESSource esSource, ESConfigurer esConfigurer, Map<String, SearchRequest.Payload> searches) {
         super(api);
 
+        this.executor = MoreExecutors.directExecutor();
+
         this.shareTimer = new Timer("status-share-scheduler");
         this.esSink = esSink;
         this.searches = searches;
 
-        FollowerModelTwin modelTwin = new FollowerModelTwin(api, MoreExecutors.directExecutor());
+        FollowerModelTwin modelTwin = new FollowerModelTwin(api, this.executor);
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         this.esConfigurer = esConfigurer;
@@ -83,9 +84,7 @@ public class Connector extends AbstractConnector {
                         .stream()
                         .map((Function<FindAndBindTwin, Describer>) f -> f).toList(),
                         prefixGenerator));
-
-        // TODO: inject
-        twinFactory = new TwinFactory(api, connConf.twinMapper());
+        this.connConf = connConf;
     }
 
     @Override
@@ -108,7 +107,7 @@ public class Connector extends AbstractConnector {
 
     public CompletableFuture<Void> start() {
         try {
-            StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver(twinFactory);
+            StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver();
             this.esSource.run(fObj);
             // needs to configure indices and so on
             this.esConfigurer.run();
@@ -134,13 +133,19 @@ public class Connector extends AbstractConnector {
         }
     }
 
-    private StreamObserver<JsonObject> ioticsMapperStreamObserver(TwinFactory tf) {
+    private StreamObserver<JsonObject> ioticsMapperStreamObserver() {
+        JsonPathMapper mapper = new JsonPathMapper(this.getApi(), this.connConf.twinMapper());
+        ESSourceTwin.Builder twinBuilderDefaults = ESSourceTwin.newBuilder()
+                .withExecutor(this.executor)
+                .withIoticsApi(this.getApi())
+                .withMapper(mapper);
+
         return new StreamObserver<>() {
             @Override
             public void onNext(JsonObject value) {
-                CompletableFuture<UpsertTwinResponse> r = tf.make(value);
-                // TODO: should attempt to share if the upsert hasn't worked on the basis that the twin exists
-                r.thenApply(upsertTwinResponse -> tf.share(value));
+                ESSourceTwin twin = ESSourceTwin.newBuilder(twinBuilderDefaults).withSource(value).build();
+                CompletableFuture<UpsertTwinResponse> r = toCompletable(twin.make());
+                r.thenApply(upsertTwinResponse -> twin.share());
             }
 
             @Override
@@ -160,7 +165,7 @@ public class Connector extends AbstractConnector {
         return new AbstractLoggingStreamObserver<>("twin>") {
             @Override
             public void onNext(TwinDatabag value) {
-                LOGGER.info("Found twin: {}", value.twinDetails().getTwinId());
+                LOGGER.info("Found host:'{}' twin:'{}'", value.twinDetails().getTwinId().getHostId(), value.twinDetails().getTwinId().getId());
             }
 
         };

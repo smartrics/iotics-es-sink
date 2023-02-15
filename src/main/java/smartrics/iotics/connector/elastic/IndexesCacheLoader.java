@@ -5,6 +5,9 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.iotics.api.DescribeTwinRequest;
 import com.iotics.api.DescribeTwinResponse;
 import com.iotics.api.Property;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
+import org.jetbrains.annotations.NotNull;
 import smartrics.iotics.space.Builders;
 import smartrics.iotics.space.UriConstants;
 import smartrics.iotics.space.connector.OntConstant;
@@ -59,28 +62,40 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
                 } catch (InterruptedException e) {
                     result.completeExceptionally(new IllegalStateException("Interrupted whilst working out index prefix", e));
                 } catch (ExecutionException e) {
-                    result.completeExceptionally(new IllegalStateException("Unable to work index prefix from twin model", e));
+                    if(e.getCause() instanceof StatusRuntimeException) {
+                        StatusRuntimeException sre = (StatusRuntimeException) e.getCause();
+                        if(sre.getStatus().getCode() == Status.Code.NOT_FOUND) {
+                            List<String> parts = makeDefaultPrefix(twinData);
+                            result.complete(String.join("_", parts));
+                        }
+                    } else {
+                        result.completeExceptionally(new IllegalStateException("Unable to work index prefix from twin model", e));
+                    }
                 }
             }
             // makes index from model label
         }, () -> {
             // make prefix from rdf/owl types since model not present
-            List<String> classes = twinData.twinDetails().getPropertiesList().stream()
-                    .filter(property -> OntConstant.uris()
-                            .contains(property.getKey())).map(Property::getUriValue)
-                    .sorted()
-                    .map(prefixGenerator::mapToPrefix)
-                    .toList(); // <<  combine into an hash
-            List<String> parts = new ArrayList<>(classes.size() + 1);
-            parts.add(INDEX_PREFIX);
-            parts.addAll(classes);
-            if (classes.isEmpty()) {
-                result.complete(String.join("_", INDEX_PREFIX, DEF_PREFIX));
-            } else {
-                result.complete(String.join("_", parts));
-            }
-
+            List<String> parts = makeDefaultPrefix(twinData);
+            result.complete(String.join("_", parts));
         });
         return result.get();
+    }
+
+    @NotNull
+    private List<String> makeDefaultPrefix(TwinDatabag twinData) {
+        List<String> classes = twinData.twinDetails().getPropertiesList().stream()
+                .filter(property -> OntConstant.uris()
+                        .contains(property.getKey())).map(Property::getUriValue)
+                .sorted()
+                .map(prefixGenerator::mapToPrefix)
+                .toList(); // <<  combine into an hash
+        List<String> parts = new ArrayList<>(classes.size() + 1);
+        parts.add(INDEX_PREFIX);
+        parts.addAll(classes);
+        if (classes.isEmpty()) {
+            parts.add(DEF_PREFIX);
+        }
+        return parts;
     }
 }

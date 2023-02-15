@@ -16,6 +16,7 @@ APP_OPTS="$APP_OPTS -Des.conf.path=$APP_CONF_DIR/es.conf.json"
 APP_OPTS="$APP_OPTS -Dconnector.conf.path=$APP_CONF_DIR/connector.conf.json"
 APP_OPTS="$APP_OPTS -Dsearch.request.path=$APP_CONF_DIR/jokes.json"
 APP_OPTS="$APP_OPTS -Djava.util.logging.config.file=$APP_CONF_DIR/logging-file.properties"
+APP_OPTS="$APP_OPTS -Dlog4j2.configurationFile=file:$APP_CONF_DIR/log4j2-file.xml"
 
 MAIN_CLASS="smartrics.iotics.connector.elastic.Main"
 
