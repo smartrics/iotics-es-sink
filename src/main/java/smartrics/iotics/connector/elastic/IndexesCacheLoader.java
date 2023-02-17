@@ -12,7 +12,7 @@ import smartrics.iotics.space.Builders;
 import smartrics.iotics.space.UriConstants;
 import smartrics.iotics.space.connector.OntConstant;
 import smartrics.iotics.space.connector.PrefixGenerator;
-import smartrics.iotics.space.grpc.TwinDatabag;
+import smartrics.iotics.space.grpc.TwinDataBag;
 import smartrics.iotics.space.twins.Describer;
 
 import java.util.ArrayList;
@@ -24,7 +24,7 @@ import static smartrics.iotics.space.connector.PrefixGenerator.DEF_PREFIX;
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 
-public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
+public class IndexesCacheLoader extends CacheLoader<TwinDataBag, String> {
 
     // all indexes managed by this connector start with "iot".
     private static final String INDEX_PREFIX = "iot";
@@ -36,7 +36,7 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
         this.describers = List.copyOf(twins);
     }
 
-    public String load(TwinDatabag twinData) throws ExecutionException, InterruptedException {
+    public String load(TwinDataBag twinData) throws ExecutionException, InterruptedException {
         var result = new CompletableFuture<String>();
         twinData.optionalModelTwinID().ifPresentOrElse(modelID -> {
             for(Describer describer: describers) {
@@ -83,8 +83,8 @@ public class IndexesCacheLoader extends CacheLoader<TwinDatabag, String> {
     }
 
     @NotNull
-    private List<String> makeDefaultPrefix(TwinDatabag twinData) {
-        List<String> classes = twinData.twinDetails().getPropertiesList().stream()
+    private List<String> makeDefaultPrefix(TwinDataBag twinData) {
+        List<String> classes = twinData.properties().stream()
                 .filter(property -> OntConstant.uris()
                         .contains(property.getKey())).map(Property::getUriValue)
                 .sorted()

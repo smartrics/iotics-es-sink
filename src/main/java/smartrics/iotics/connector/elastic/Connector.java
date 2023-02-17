@@ -1,27 +1,25 @@
 package smartrics.iotics.connector.elastic;
 
 import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.gson.JsonObject;
-import com.iotics.api.DeleteTwinResponse;
-import com.iotics.api.SearchRequest;
-import com.iotics.api.TwinID;
-import com.iotics.api.UpsertTwinResponse;
+import com.iotics.api.*;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smartrics.iotics.connector.elastic.conf.ConnConf;
+import smartrics.iotics.connector.elastic.conf.SearchConf;
 import smartrics.iotics.space.connector.AbstractConnector;
 import smartrics.iotics.space.connector.PrefixGenerator;
 import smartrics.iotics.space.grpc.AbstractLoggingStreamObserver;
-import smartrics.iotics.space.grpc.FeedDatabag;
+import smartrics.iotics.space.grpc.FeedDataBag;
 import smartrics.iotics.space.grpc.IoticsApi;
-import smartrics.iotics.space.grpc.TwinDatabag;
+import smartrics.iotics.space.grpc.TwinDataBag;
 import smartrics.iotics.space.twins.*;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -30,59 +28,70 @@ import java.util.concurrent.Executor;
 import java.util.function.Function;
 
 import static smartrics.iotics.connector.elastic.ESSink.indexNameForFeed;
+import static smartrics.iotics.connector.elastic.ESSink.indexNameForTwin;
 import static smartrics.iotics.space.grpc.ListenableFutureAdapter.toCompletable;
 
 public class Connector extends AbstractConnector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Connector.class);
 
-    private final Map<String, FindAndBindTwin> findAndBindTwins;
-    private final LoadingCache<TwinDatabag, String> indexPrefixCache;
+    private final Map<String, FindAndDoTwin> findAndDoTwins;
+    private final LoadingCache<TwinDataBag, String> indexPrefixCache;
     private final ESSink esSink;
     private final ESConfigurer esConfigurer;
     private final Timer shareTimer;
-    private final Map<String, SearchRequest.Payload> searches;
+    private final Timer describerTimer;
     private final ESSource esSource;
     private final ConnConf connConf;
     private final Executor executor;
     private CompletableFuture<Void> fnbFuture;
 
-    public Connector(IoticsApi api, ConnConf connConf, ESSink esSink, ESSource esSource, ESConfigurer esConfigurer, Map<String, SearchRequest.Payload> searches) {
+    public Connector(IoticsApi api,
+                     ConnConf connConf,
+                     ESSink esSink,
+                     ESSource esSource,
+                     ESConfigurer esConfigurer) {
         super(api);
 
         this.executor = MoreExecutors.directExecutor();
 
+        this.describerTimer = new Timer("describer-scheduler");
         this.shareTimer = new Timer("status-share-scheduler");
         this.esSink = esSink;
-        this.searches = searches;
 
         FollowerModelTwin modelTwin = new FollowerModelTwin(api, this.executor);
         ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
         this.esConfigurer = esConfigurer;
         this.esSource = esSource;
-        this.findAndBindTwins = new HashMap<>();
+        this.findAndDoTwins = new HashMap<>();
 
-        searches.entrySet().forEach(stringPayloadEntry -> {
-            String keyIndex = stringPayloadEntry.getKey();
-            String label = "key_" + keyIndex;
-            FindAndBindTwin findAndBindTwin = new SafeGetter<FindAndBindTwin>().safeGet(() -> toCompletable(modelFuture)
-                    .thenApply(modelID -> create(modelID, keyIndex, label, Duration.ofSeconds(connConf.statsPublishPeriodSec()),
-                            new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
-                                    connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay())
-                    ))
-                    .thenApply(Connector.this::delete)
-                    .thenApply(Connector.this::make)
-                    .get());
-            Connector.this.findAndBindTwins.put(keyIndex, findAndBindTwin);
-        });
+        connConf.searches().stream()
+                .filter(searchConf -> searchConf.type().equals(SearchConf.Handler.FIND_AND_DESCRIBE))
+                .forEach(searchConf -> {
+                    String keyIndex = searchConf.id();
+                    String label = "key_" + keyIndex;
+                    FindAndDoTwin findAndDescribeTwin = new SafeGetter<FindAndDoTwin>().safeGet(() ->
+                            toCompletable(modelFuture)
+                                    .thenApply(modelID ->
+                                            create(modelID,
+                                                    searchConf.type(),
+                                                    keyIndex,
+                                                    label,
+                                                    Duration.ofSeconds(connConf.statsPublishPeriodSec())
+                                            ))
+                                    .thenApply(Connector.this::delete)
+                                    .thenApply(Connector.this::make)
+                                    .get());
+                    Connector.this.findAndDoTwins.put(keyIndex, findAndDescribeTwin);
+                });
 
         PrefixGenerator prefixGenerator = new PrefixGenerator();
         indexPrefixCache = CacheBuilder
                 .newBuilder()
-                .build(new IndexesCacheLoader(findAndBindTwins
+                .build(new IndexesCacheLoader(findAndDoTwins
                         .values()
                         .stream()
-                        .map((Function<FindAndBindTwin, Describer>) f -> f).toList(),
+                        .map((Function<FindAndDoTwin, Describer>) f -> f).toList(),
                         prefixGenerator));
         this.connConf = connConf;
     }
@@ -95,7 +104,7 @@ public class Connector extends AbstractConnector {
         d.thenAccept(unused -> {
             if (fnbFuture != null && !fnbFuture.isDone()) {
                 boolean res = fnbFuture.cancel(true);
-                if(!res) {
+                if (!res) {
                     LOGGER.debug("future not cancelled " + fnbFuture);
                 }
                 fnbFuture = null;
@@ -113,13 +122,39 @@ public class Connector extends AbstractConnector {
             this.esConfigurer.run();
 
             List<CompletableFuture<Void>> list = new ArrayList<>();
-            findAndBindTwins.keySet().forEach(keyIndex -> {
-                FindAndBindTwin findAndBindTwin = findAndBindTwins.get(keyIndex);
-                StreamObserver<FeedDatabag> fObs = feedDataStreamObserver();
-                StreamObserver<TwinDatabag> tObs = twinDatabagStreamObserver();
-                SearchRequest.Payload payload = searches.get(keyIndex);
-                CompletableFuture<Void> f = findAndBindTwin.findAndBind(payload, tObs, fObs);
-                list.add(f);
+            findAndDoTwins.keySet().forEach(keyIndex -> {
+                FindAndDoTwin findAndDoTwin = findAndDoTwins.get(keyIndex);
+                SearchRequest.Payload payload = null;
+                SearchConf sc = connConf.searches()
+                        .stream()
+                        .filter(searchConf -> searchConf.id().equals(keyIndex))
+                        .findFirst()
+                        .get();
+                try {
+                    payload = sc.parse();
+                    CompletableFuture<Void> f = null;
+                    if (findAndDoTwin instanceof FindAndBindTwin) {
+                        StreamObserver<FeedDataBag> fObs = feedDataStreamObserver();
+                        StreamObserver<TwinDataBag> tObs = twinDatabagStreamObserver();
+                        f = ((FindAndBindTwin) findAndDoTwin).findAndBind(payload, tObs, fObs);
+                    }
+                    if (findAndDoTwin instanceof FindAndDescribeTwin) {
+                        SearchConf.FindAndDescribeConf c = SearchConf.FindAndDescribeConf.from(sc.conf());
+                        StreamObserver<DescribeTwinResponse> tObs = describerStreamObserver();
+                        f = ((FindAndDescribeTwin) findAndDoTwin)
+                                .describeAll(payload,
+                                        Duration.ofSeconds(c.startDelaySec()),
+                                        Duration.ofSeconds(c.pollFrequencySec()),
+                                        tObs);
+                    }
+                    if (f != null) {
+                        list.add(f);
+                    } else {
+                        LOGGER.warn("unable to process payload {}", payload);
+                    }
+                } catch (IOException e) {
+                    LOGGER.error("Unable to parse search {}", sc);
+                }
             });
 
 
@@ -161,24 +196,41 @@ public class Connector extends AbstractConnector {
         };
     }
 
-    private StreamObserver<TwinDatabag> twinDatabagStreamObserver() {
+    private StreamObserver<DescribeTwinResponse> describerStreamObserver() {
         return new AbstractLoggingStreamObserver<>("twin>") {
             @Override
-            public void onNext(TwinDatabag value) {
-                LOGGER.info("Found host:'{}' twin:'{}'", value.twinDetails().getTwinId().getHostId(), value.twinDetails().getTwinId().getId());
+            public void onNext(DescribeTwinResponse value) {
+                TwinDataBag twinDataBag = TwinDataBag.from(value);
+                String index = indexNameForTwin(indexPrefixCache.getUnchecked(twinDataBag));
+                JsonObject doc = jsonifier.toJson(twinDataBag);
+                System.out.println(doc);
+                esSink.bulk(index, doc).exceptionally(throwable -> {
+                    JsonObject o = new JsonObject();
+                    o.addProperty("error", throwable.getMessage());
+                    return o;
+                }).thenAccept(object -> LOGGER.trace("sent to ES {}", object.toString()));
             }
 
         };
     }
 
-    private AbstractLoggingStreamObserver<FeedDatabag> feedDataStreamObserver() {
+    private StreamObserver<TwinDataBag> twinDatabagStreamObserver() {
+        return new AbstractLoggingStreamObserver<>("twin>") {
+            @Override
+            public void onNext(TwinDataBag value) {
+                LOGGER.info("Found host:'{}' twin:'{}'", value.twinID().getHostId(), value.twinID().getId());
+            }
+        };
+    }
+
+    private AbstractLoggingStreamObserver<FeedDataBag> feedDataStreamObserver() {
         return new AbstractLoggingStreamObserver<>("feed>") {
             @Override
-            public void onNext(FeedDatabag feedData) {
+            public void onNext(FeedDataBag feedDataBag) {
                 try {
-                    String indexPrefix = indexPrefixCache.getUnchecked(feedData.twinData());
-                    String index = indexNameForFeed(indexPrefix, feedData.feedDetails().getFeedId());
-                    JsonObject doc = jsonifier.toJson(feedData);
+                    String indexPrefix = indexPrefixCache.getUnchecked(feedDataBag.twinData());
+                    String index = indexNameForFeed(indexPrefix, feedDataBag.feedDetails().getFeedId());
+                    JsonObject doc = jsonifier.toJson(feedDataBag);
                     esSink.bulk(index, doc).exceptionally(throwable -> {
                         JsonObject o = new JsonObject();
                         o.addProperty("error", throwable.getMessage());
@@ -191,25 +243,32 @@ public class Connector extends AbstractConnector {
         };
     }
 
-    private FindAndBindTwin create(TwinID modelID,
-                                   String keyIndex,
-                                   String label,
-                                   Duration statsSharePeriod,
-                                   Follower.RetryConf retryConf) {
-        return new FindAndBindTwin(Connector.this.getApi(), "receiver_key_" + keyIndex, label,
-                MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod, retryConf);
+    private FindAndDoTwin create(TwinID modelID,
+                                 SearchConf.Handler type,
+                                 String keyIndex,
+                                 String label,
+                                 Duration statsSharePeriod) {
+        if (type.equals(SearchConf.Handler.FIND_AND_BIND)) {
+            Follower.RetryConf rc = new Follower.RetryConf(connConf.retryDelay(), connConf.retryJitter(),
+                    connConf.retryBackoffDelay(), connConf.retryMaxBackoffDelay());
+            return new FindAndBindTwin(Connector.this.getApi(), "receiver_key_" + keyIndex, label,
+                    MoreExecutors.directExecutor(), modelID, shareTimer, statsSharePeriod, rc);
+
+        }
+        return new FindAndDescribeTwin(Connector.this.getApi(), "receiver_key_" + keyIndex, label,
+                MoreExecutors.directExecutor(), modelID, describerTimer, shareTimer, statsSharePeriod);
     }
 
-    private FindAndBindTwin make(FindAndBindTwin fabt) {
-        return new SafeGetter<FindAndBindTwin>().safeGet(() -> {
+    private FindAndDoTwin make(FindAndDoTwin fabt) {
+        return new SafeGetter<FindAndDoTwin>().safeGet(() -> {
             UpsertTwinResponse upsertTwinResponse = fabt.make().get();
             LOGGER.info("upsert: {}", upsertTwinResponse);
             return fabt;
         });
     }
 
-    private FindAndBindTwin delete(FindAndBindTwin fabt) {
-        return new SafeGetter<FindAndBindTwin>().safeGet(() -> {
+    private FindAndDoTwin delete(FindAndDoTwin fabt) {
+        return new SafeGetter<FindAndDoTwin>().safeGet(() -> {
             DeleteTwinResponse deleteTwinResponse = fabt.delete().get();
             LOGGER.info("delete: {}", deleteTwinResponse);
             return fabt;

@@ -48,8 +48,6 @@ public class Main {
         SimpleConfig agentConf = SimpleConfig.readConf(agentIdPath, SimpleConfig.fromEnv("AGENT_"));
         String spaceDns = System.getProperty("space.dns", System.getenv("SPACE"));
 
-        String searchRequestPaths = System.getProperty("search.request.path");
-
         String elasticSearchConfPath = System.getProperty("es.conf.path");
         if (elasticSearchConfPath == null) {
             throw new IllegalArgumentException("null path to elasticsearch conf (-Des.conf.path missing)");
@@ -107,19 +105,8 @@ public class Main {
 
         ESConfigurer esConfigurer = new ESConfigurer(esClient);
 
-        Map<String, SearchRequest.Payload> searches = new HashMap<>();
-        Set<String> spSet = new HashSet<>();
-        Collections.addAll(spSet, searchRequestPaths.split(","));
-        spSet = spSet.stream().map(String::trim).collect(Collectors.toSet());
-        String[] spPath = spSet.toArray(new String[0]);
-        for(int i = 0; i < spPath.length; i++) {
-            SearchRequest.Payload.Builder searchRequestBuilder = SearchRequest.Payload.newBuilder();
-            JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(spPath[i]), searchRequestBuilder);
-            searches.put(Integer.toString(i), searchRequestBuilder.build());
-        }
-
         IoticsApi api = new IoticsApi(ioticSpace, userConf, agentConf, connConf.tokenDuration());
-        Connector connector = new Connector(api, connConf, sink, esSource, esConfigurer, searches);
+        Connector connector = new Connector(api, connConf, sink, esSource, esConfigurer);
 
         try {
             CompletableFuture<Void> c = connector.start();

@@ -7,6 +7,36 @@
   "retryBackoffDelaySec": 10,
   "retryMaxBackoffDelaySec": 60,
 
+  "searches": [
+    {
+      "id": "jokes",
+      "path": "./tmp/jokes.json",
+      "type": "FIND_AND_BIND",
+      "conf": {}
+    },
+    {
+      "id": "bikes",
+      "path": "./tmp/bikes.json",
+      "type": "FIND_AND_BIND",
+      "conf": {}
+    },
+    {
+      "id": "portsmouth_twins",
+      "path": "./tmp/portsmouth_twins.json",
+      "type": "FIND_AND_BIND",
+      "conf": {}
+    },
+    {
+      "id": "rolling_stock",
+      "path": "./tmp/rolling_stock.json",
+      "type": "FIND_AND_DESCRIBE",
+      "conf": {
+        "startDelaySec": 5,
+        "pollFrequencySec": 5
+      }
+    }
+  ],
+
   "twinMapper" : {
     "ontologyRoot": "https://smartrics.it/ont#",
     "locationPath": "$.region.location",

@@ -87,6 +87,10 @@ public class ESSink {
     }
 
 
+    public static String indexNameForTwin(String index) {
+        return index.toLowerCase(Locale.ROOT);
+    }
+
     public static String indexNameForFeed(String prefix, FeedID feedID) {
         return String.join("_", prefix, feedID.getId()).toLowerCase(Locale.ROOT);
     }
