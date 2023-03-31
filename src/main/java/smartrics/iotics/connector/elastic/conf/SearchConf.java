@@ -6,6 +6,8 @@ import com.iotics.api.SearchRequest;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Map;
 
 public record SearchConf(String id, String path, Handler type, Map<String, String> conf) {
@@ -25,7 +27,8 @@ public record SearchConf(String id, String path, Handler type, Map<String, Strin
 
     public SearchRequest.Payload parse() throws IOException {
         SearchRequest.Payload.Builder searchRequestBuilder = SearchRequest.Payload.newBuilder();
-        JsonFormat.parser().ignoringUnknownFields().merge(new FileReader(path), searchRequestBuilder);
+        String json = Files.readString(Paths.get(path));
+        JsonFormat.parser().ignoringUnknownFields().merge(json, searchRequestBuilder);
         return searchRequestBuilder.build();
     }
 }

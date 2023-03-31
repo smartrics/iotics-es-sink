@@ -13,20 +13,20 @@
       "path": "./tmp/jokes.json",
       "type": "FIND_AND_BIND",
       "conf": {}
-    },
-    {
+    }
+    , {
       "id": "bikes",
       "path": "./tmp/bikes.json",
       "type": "FIND_AND_BIND",
       "conf": {}
-    },
-    {
+    }
+    , {
       "id": "portsmouth_twins",
       "path": "./tmp/portsmouth_twins.json",
       "type": "FIND_AND_BIND",
       "conf": {}
-    },
-    {
+    }
+    , {
       "id": "rolling_stock",
       "path": "./tmp/rolling_stock.json",
       "type": "FIND_AND_DESCRIBE",
