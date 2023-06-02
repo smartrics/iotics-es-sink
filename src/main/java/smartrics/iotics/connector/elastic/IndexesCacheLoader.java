@@ -28,18 +28,22 @@ public class IndexesCacheLoader extends CacheLoader<TwinDataBag, String> {
 
     // all indexes managed by this connector start with "iot".
     private static final String INDEX_PREFIX = "iot";
-    private final List<Describer> describers;
     private final PrefixGenerator prefixGenerator;
+    private final Connector connector;
 
-    public IndexesCacheLoader(List<Describer> twins, PrefixGenerator prefixGenerator) {
+    public IndexesCacheLoader(Connector connector, PrefixGenerator prefixGenerator) {
         this.prefixGenerator = prefixGenerator;
-        this.describers = List.copyOf(twins);
+        this.connector = connector;
     }
 
     public String load(TwinDataBag twinData) throws ExecutionException, InterruptedException {
         var result = new CompletableFuture<String>();
         twinData.optionalModelTwinID().ifPresentOrElse(modelID -> {
-            for(Describer describer: describers) {
+            if(connector.getDescribers().isEmpty()) {
+                result.completeExceptionally(new IllegalStateException("no twins to describe"));
+                return;
+            }
+            for(Describer describer: connector.getDescribers()) {
                 ListenableFuture<DescribeTwinResponse> fut = describer.ioticsApi().twinAPIFutureStub()
                         .describeTwin(DescribeTwinRequest.newBuilder()
                                 .setHeaders(Builders.newHeadersBuilder(describer.getAgentIdentity().did()).build())

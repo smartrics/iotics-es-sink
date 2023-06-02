@@ -10,7 +10,7 @@
   "searches": [
     {
       "id": "jokes",
-      "enabled": false,
+      "enabled": true,
       "path": "./tmp/jokes.json",
       "type": "FIND_AND_BIND",
       "conf": {}
@@ -24,7 +24,7 @@
     }
     , {
       "id": "bikes",
-      "enabled": false,
+      "enabled": true,
       "path": "./tmp/bikes.json",
       "type": "FIND_AND_BIND",
       "conf": {}

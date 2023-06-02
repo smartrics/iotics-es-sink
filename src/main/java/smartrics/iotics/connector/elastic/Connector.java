@@ -64,10 +64,7 @@ public class Connector extends AbstractConnector {
         PrefixGenerator prefixGenerator = new PrefixGenerator();
         indexPrefixCache = CacheBuilder
                 .newBuilder()
-                .build(new IndexesCacheLoader(findAndDoTwins
-                        .values()
-                        .stream()
-                        .map((Function<FindAndDoTwin, Describer>) f -> f).toList(),
+                .build(new IndexesCacheLoader(this,
                         prefixGenerator));
      }
 
@@ -88,6 +85,15 @@ public class Connector extends AbstractConnector {
         });
         return CompletableFuture.allOf(b, c, d);
     }
+
+    public List<Describer> getDescribers() {
+        return findAndDoTwins.values()
+                .stream()
+                .map((Function<FindAndDoTwin, Describer>) f -> f).toList();
+    }
+
+
+    private record ValidTwinConf(SearchConf sc, FindAndDoTwin twin) {}
 
     public CompletableFuture<Void> start() {
         try {
