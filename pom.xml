@@ -12,7 +12,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
-        <protoc.version>3.21.7</protoc.version>
+        <protoc.version>3.21.12</protoc.version>
         <grpc-protobuf.version>1.51.0</grpc-protobuf.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
@@ -143,7 +143,12 @@
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java-util</artifactId>
-            <version>3.21.12</version>
+            <version>${protoc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-javalite</artifactId>
+            <version>${protoc.version}</version>
         </dependency>
         <!-- elasticsearch -->
         <dependency>

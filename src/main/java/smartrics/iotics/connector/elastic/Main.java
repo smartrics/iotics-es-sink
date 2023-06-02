@@ -107,7 +107,8 @@ public class Main {
         try {
             CompletableFuture<Void> c = connector.start();
             LOGGER.info("waiting to stop");
-            c.get();
+            Void s = c.get();
+            LOGGER.info("COMPLETABLE={}", s);
         } finally {
             LOGGER.info("channel stopping down");
             CompletableFuture<Void> d = connector.stop(Duration.ofSeconds(1));

@@ -57,34 +57,10 @@ public class Connector extends AbstractConnector {
         this.describerTimer = new Timer("describer-scheduler");
         this.shareTimer = new Timer("status-share-scheduler");
         this.esSink = esSink;
-
-        FollowerModelTwin modelTwin = new FollowerModelTwin(api, this.executor);
-        ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
-
         this.esConfigurer = esConfigurer;
         this.esSource = esSource;
         this.findAndDoTwins = new HashMap<>();
-
-        connConf.searches().stream()
-                .filter(searchConf -> searchConf.type().equals(SearchConf.Handler.FIND_AND_DESCRIBE))
-                .forEach(searchConf -> {
-                    String keyIndex = searchConf.id();
-                    String label = "key_" + keyIndex;
-                    FindAndDoTwin findAndDescribeTwin = new SafeGetter<FindAndDoTwin>().safeGet(() ->
-                            toCompletable(modelFuture)
-                                    .thenApply(modelID ->
-                                            create(modelID,
-                                                    searchConf.type(),
-                                                    keyIndex,
-                                                    label,
-                                                    Duration.ofSeconds(connConf.statsPublishPeriodSec())
-                                            ))
-                                    .thenApply(Connector.this::delete)
-                                    .thenApply(Connector.this::make)
-                                    .get());
-                    Connector.this.findAndDoTwins.put(keyIndex, findAndDescribeTwin);
-                });
-
+        this.connConf = connConf;
         PrefixGenerator prefixGenerator = new PrefixGenerator();
         indexPrefixCache = CacheBuilder
                 .newBuilder()
@@ -93,8 +69,7 @@ public class Connector extends AbstractConnector {
                         .stream()
                         .map((Function<FindAndDoTwin, Describer>) f -> f).toList(),
                         prefixGenerator));
-        this.connConf = connConf;
-    }
+     }
 
     @Override
     public CompletableFuture<Void> stop(Duration timeout) {
@@ -116,47 +91,57 @@ public class Connector extends AbstractConnector {
 
     public CompletableFuture<Void> start() {
         try {
-            StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver();
-            this.esSource.run(fObj);
+            // TODO: bug here on its configuration
+            // StreamObserver<JsonObject> fObj = ioticsMapperStreamObserver();
+            // this.esSource.run(fObj);
             // needs to configure indices and so on
             this.esConfigurer.run();
 
-            List<CompletableFuture<Void>> list = new ArrayList<>();
-            findAndDoTwins.keySet().forEach(keyIndex -> {
-                FindAndDoTwin findAndDoTwin = findAndDoTwins.get(keyIndex);
-                SearchRequest.Payload payload = null;
-                SearchConf sc = connConf.searches()
-                        .stream()
-                        .filter(searchConf -> searchConf.id().equals(keyIndex))
-                        .findFirst()
-                        .get();
-                try {
-                    payload = sc.parse();
-                    CompletableFuture<Void> f = null;
-                    if (findAndDoTwin instanceof FindAndBindTwin) {
-                        StreamObserver<FeedDataBag> fObs = feedDataStreamObserver();
-                        StreamObserver<TwinDataBag> tObs = twinDatabagStreamObserver();
-                        f = ((FindAndBindTwin) findAndDoTwin).findAndBind(payload, tObs, fObs);
-                    }
-                    if (findAndDoTwin instanceof FindAndDescribeTwin) {
-                        SearchConf.FindAndDescribeConf c = SearchConf.FindAndDescribeConf.from(sc.conf());
-                        StreamObserver<DescribeTwinResponse> tObs = describerStreamObserver();
-                        f = ((FindAndDescribeTwin) findAndDoTwin)
-                                .describeAll(payload,
-                                        Duration.ofSeconds(c.startDelaySec()),
-                                        Duration.ofSeconds(c.pollFrequencySec()),
-                                        tObs);
-                    }
-                    if (f != null) {
-                        list.add(f);
-                    } else {
-                        LOGGER.warn("unable to process payload {}", payload);
-                    }
-                } catch (IOException e) {
-                    LOGGER.error("Unable to parse search {}", sc);
-                }
-            });
+            FollowerModelTwin modelTwin = new FollowerModelTwin(this.getApi(), this.executor);
+            ListenableFuture<TwinID> modelFuture = modelTwin.makeIfAbsent();
 
+            List<CompletableFuture<CompletableFuture<Void>>> list = connConf.searches().stream()
+                    .filter(SearchConf::enabled)
+                    .map(SearchConf::parse)
+                    .filter(SearchConf::valid)
+                    .map(sc -> {
+                        LOGGER.info("VALID SEARCH CONF: {}", sc);
+                        return sc;
+                    })
+                    .map(searchConf -> {
+                        String keyIndex = searchConf.id();
+                        String label = "key_" + keyIndex;
+                        return toCompletable(modelFuture)
+                                .thenApply(modelID ->
+                                        create(modelID,
+                                                searchConf.type(),
+                                                keyIndex,
+                                                label,
+                                                Duration.ofSeconds(connConf.statsPublishPeriodSec())
+                                        ))
+                                .thenApply(twin -> this.delete(twin))
+                                .thenApply(twin -> this.make(twin))
+                                .thenApply(twin -> Connector.this.put(keyIndex, twin))
+                                .thenApply(twin -> {
+                                    SearchRequest.Payload payload = searchConf.payload();
+                                    CompletableFuture<Void> f = null;
+                                    if (twin instanceof FindAndBindTwin) {
+                                        StreamObserver<FeedDataBag> fObs = feedDataStreamObserver();
+                                        StreamObserver<TwinDataBag> tObs = twinDatabagStreamObserver();
+                                        f = ((FindAndBindTwin) twin).findAndBind(payload, tObs, fObs);
+                                    }
+                                    if (twin instanceof FindAndDescribeTwin) {
+                                        SearchConf.FindAndDescribeConf c = SearchConf.FindAndDescribeConf.from(searchConf.conf());
+                                        StreamObserver<DescribeTwinResponse> tObs = describerStreamObserver();
+                                        f = ((FindAndDescribeTwin) twin)
+                                                .describeAll(payload,
+                                                        Duration.ofSeconds(c.startDelaySec()),
+                                                        Duration.ofSeconds(c.pollFrequencySec()),
+                                                        tObs);
+                                    }
+                                    return f;
+                                });
+                    }).toList();
 
             fnbFuture = CompletableFuture.allOf(list.toArray(new CompletableFuture[0]));
             return fnbFuture;
@@ -186,7 +171,6 @@ public class Connector extends AbstractConnector {
             @Override
             public void onError(Throwable t) {
                 LOGGER.error("problems upserting/sharing", t);
-                t.printStackTrace();
             }
 
             @Override
@@ -273,6 +257,11 @@ public class Connector extends AbstractConnector {
             LOGGER.info("delete: {}", deleteTwinResponse);
             return fabt;
         });
+    }
+
+    private FindAndDoTwin put(String keyIndex, FindAndDoTwin t) {
+        this.findAndDoTwins.put(keyIndex, t);
+        return t;
     }
 
     private interface MyFuture<V> {

@@ -10,24 +10,35 @@
   "searches": [
     {
       "id": "jokes",
+      "enabled": false,
       "path": "./tmp/jokes.json",
       "type": "FIND_AND_BIND",
       "conf": {}
     }
     , {
+      "id": "cars",
+      "enabled": true,
+      "path": "./tmp/cars.json",
+      "type": "FIND_AND_BIND",
+      "conf": {}
+    }
+    , {
       "id": "bikes",
+      "enabled": false,
       "path": "./tmp/bikes.json",
       "type": "FIND_AND_BIND",
       "conf": {}
     }
     , {
       "id": "portsmouth_twins",
+      "enabled": false,
       "path": "./tmp/portsmouth_twins.json",
       "type": "FIND_AND_BIND",
       "conf": {}
     }
     , {
       "id": "rolling_stock",
+      "enabled": false,
       "path": "./tmp/rolling_stock.json",
       "type": "FIND_AND_DESCRIBE",
       "conf": {
