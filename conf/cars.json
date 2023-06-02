@@ -1,0 +1,12 @@
+{
+  "filter": {
+    "properties": [
+      {
+        "key": "https://data.iotics.com/app#defines",
+        "uriValue": {
+          "value": "https://schema.org/Car"
+        }
+      }
+    ]
+  }
+}
